@@ -1,36 +1,35 @@
 package main
 
 import (
-	"encoding/gob"
-	"fmt"
-	"io"
+	"flag"
 	"log"
-	"net"
 
 	"github.com/husobee/peerstore/protocol"
 )
 
-func main() {
-	fmt.Println("server")
-	listener, _ := net.Listen("tcp", ":3000")
+var (
+	addr     string
+	dataPath string
+)
 
-	for {
-		conn, _ := listener.Accept()
-		// get requests
-		decoder := gob.NewDecoder(conn)
-		var request protocol.Request
-		err := decoder.Decode(&request)
-		if err != nil {
-			log.Printf("ERR: %v\n", err)
-			if err == io.EOF {
-				continue
-			}
-		} else {
-			log.Printf("Got Request: %v\n", request)
-			encoder := gob.NewEncoder(conn)
-			encoder.Encode(protocol.Response{
-				Data: []byte("Well back at you!"),
-			})
-		}
+func init() {
+	flag.StringVar(
+		&addr, "addr", ":3000",
+		"the address for the server to listen")
+	flag.StringVar(
+		&dataPath, "dataPath", "~/.peerstore",
+		"the data location for the server to store files")
+	flag.Parse()
+}
+
+func main() {
+	log.Println("Starting server.")
+	// create a new server
+	server, err := protocol.NewServer("tcp", addr)
+	if err != nil {
+		log.Panicf("Failed to create new server: %v", err)
 	}
+	quit := server.Serve()
+	// call the quit to clean up at end of function
+	defer func() { quit <- struct{}{} }()
 }
