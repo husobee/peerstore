@@ -12,13 +12,22 @@ func main() {
 	if err != nil {
 		log.Printf("ERR: %v", err)
 	}
-	response, err := t.RoundTrip(&protocol.Request{
-		Header: protocol.Header{},
-		Method: protocol.GetFileMethod,
-		Data:   []byte("hi there"),
-	})
-	if err != nil {
-		log.Printf("ERR: %v\n", err)
+
+	for _, method := range []protocol.RequestMethod{
+		protocol.GetFileMethod,
+		protocol.PostFileMethod,
+		protocol.DeleteFileMethod,
+		42,
+	} {
+		log.Println("starting request: ", method)
+		response, err := t.RoundTrip(&protocol.Request{
+			Header: protocol.Header{},
+			Method: method,
+			Data:   []byte("hi there"),
+		})
+		if err != nil {
+			log.Printf("ERR: %v\n", err)
+		}
+		log.Printf("Response: %v\n", response)
 	}
-	log.Printf("Response: %v\n", response)
 }

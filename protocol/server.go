@@ -24,6 +24,8 @@ func NewServer(proto, address string) (*Server, error) {
 	}, nil
 }
 
+// Serve - process to serve requests, for each request that we accept
+// as a connection, we will fork the handling of that connection.
 func (s *Server) Serve() chan struct{} {
 	// create a quit channel, so we can signal server to stop
 	q := make(chan struct{})
@@ -46,20 +48,36 @@ func (s *Server) Serve() chan struct{} {
 // by decoding the request, processing, and returning a response to the request
 func (s *Server) handleConnection(conn net.Conn) {
 	decoder := gob.NewDecoder(conn)
-	var request Request
-	err := decoder.Decode(&request)
-	if err != nil {
-		log.Printf("ERR: %v\n", err)
-		return
-	}
-	// at this point we have a request struct,
-	// we will now figure out what type of message it is and perform
-	// the method specified
-	log.Printf("Got Request: %v\n", request)
-
-	// now we will send back a response
 	encoder := gob.NewEncoder(conn)
-	encoder.Encode(Response{
-		Data: []byte("Well back at you!"),
-	})
+	for {
+		var request Request
+		err := decoder.Decode(&request)
+		if err != nil {
+			log.Printf("ERR: %v\n", err)
+			return
+		}
+		// at this point we have a request struct,
+		// we will now figure out what type of message it is and perform
+		// the method specified
+		log.Printf("Got Request: %v\n", request)
+		var response = new(Response)
+
+		switch request.Method {
+		case GetFileMethod:
+			log.Printf("Request is a GetFileMethod Request")
+			response.Status = Success
+		case PostFileMethod:
+			log.Printf("Request is a PostFileMethod Request")
+			response.Status = Success
+		case DeleteFileMethod:
+			log.Printf("Request is a DeleteFileMethod Request")
+			response.Status = Success
+		default:
+			log.Printf("Request is an Unknown Request")
+			response.Status = Error
+		}
+
+		// now we will send back a response
+		encoder.Encode(*response)
+	}
 }
