@@ -28,6 +28,6 @@ func main() {
 		if err != nil {
 			log.Printf("ERR: %v\n", err)
 		}
-		log.Printf("Response: %v\n", response)
+		log.Printf("Response: %+v\n", response)
 	}
 }

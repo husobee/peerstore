@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"bytes"
 	"encoding/gob"
 
 	"github.com/pkg/errors"
@@ -21,6 +20,12 @@ const (
 	Error
 )
 
+var (
+	ValidResponseStatus = map[ResponseStatus]bool{
+		Success: true, Error: true,
+	}
+)
+
 // Response - the response structure for any given request
 type Response struct {
 	Header Header
@@ -28,20 +33,15 @@ type Response struct {
 	Data   []byte
 }
 
-// Serialize - convert the response to the wire format
-func (r *Response) Serialize() ([]byte, error) {
-	b := bytes.Buffer{}
-	encoder := gob.NewEncoder(&b)
-	err := encoder.Encode(r)
-	return b.Bytes(), errors.Wrap(err, "response serialization failure: ")
-}
+// Validate - implementation of Validatable, makes sure the response is
+// a valid response
+func (r *Response) Validate() error {
+	if err := r.Header.Validate(); err != nil {
+		return errors.Wrap(err, "failed to validate response header: ")
+	}
 
-// Deserialize - convert the response from the wire format
-func DeserializeResponse(responseBytes []byte) (Response, error) {
-	b := bytes.Buffer{}
-	b.Write(responseBytes)
-	decoder := gob.NewDecoder(&b)
-	resp := &Response{}
-	err := decoder.Decode(resp)
-	return *resp, errors.Wrap(err, "response deserialization failure: ")
+	if !ValidResponseStatus[r.Status] {
+		return errors.New("failed to validate response status")
+	}
+	return nil
 }

@@ -50,11 +50,15 @@ func (t *Transport) RoundTrip(request *Request) (Response, error) {
 	var response Response
 	// serialize request
 	if err := t.enc.Encode(request); err != nil {
-		return response, errors.Wrap(err, "failure encoding request: ")
+		return Response{}, errors.Wrap(err, "failure encoding request: ")
 	}
 	// unserialize response
 	if err := t.dec.Decode(&response); err != nil {
-		return response, errors.Wrap(err, "failure decoding response: ")
+		return Response{}, errors.Wrap(err, "failure decoding response: ")
+	}
+	// validate response
+	if err := response.Validate(); err != nil {
+		return Response{}, errors.Wrap(err, "failure validating response: ")
 	}
 	return response, nil
 }
@@ -63,9 +67,11 @@ func (t *Transport) RoundTrip(request *Request) (Response, error) {
 // the peerstore version, the key (if applicable), from and to nodes
 // and the length of the data in the data section of the message.
 type Header struct {
-	Version    byte
 	Key        [20]byte
-	FromNode   [20]byte
-	ToNode     [20]byte
-	DataLength int64
+	DataLength uint64
+}
+
+func (h *Header) Validate() error {
+	// TODO: figure out validation of header
+	return nil
 }
