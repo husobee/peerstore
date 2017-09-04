@@ -25,7 +25,7 @@ func init() {
 func main() {
 	log.Println("Starting server.")
 	// create a new server
-	server, err := protocol.NewServer("tcp", addr)
+	server, err := protocol.NewServer(addr, dataPath)
 	if err != nil {
 		log.Panicf("Failed to create new server: %v", err)
 	}

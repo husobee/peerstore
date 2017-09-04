@@ -14,8 +14,8 @@ func main() {
 	}
 
 	for _, method := range []protocol.RequestMethod{
-		protocol.GetFileMethod,
 		protocol.PostFileMethod,
+		protocol.GetFileMethod,
 		protocol.DeleteFileMethod,
 		42,
 	} {
