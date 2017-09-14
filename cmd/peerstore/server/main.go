@@ -3,6 +3,8 @@ package main
 import (
 	"flag"
 	"log"
+	"os"
+	"os/signal"
 	"runtime"
 
 	"github.com/husobee/peerstore/protocol"
@@ -32,13 +34,34 @@ func init() {
 }
 
 func main() {
-	log.Println("Starting server.")
 	// create a new server
 	server, err := protocol.NewServer(addr, dataPath, serverBuffer, serverNumWorkers)
 	if err != nil {
 		log.Panicf("Failed to create new server: %v", err)
 	}
-	quit := server.Serve()
-	// call the quit to clean up at end of function
-	defer func() { quit <- true }()
+
+	log.Println("Starting server - ", addr, dataPath, serverBuffer, serverNumWorkers)
+	var (
+		quit = make(chan bool)
+		done = make(chan bool)
+	)
+
+	// handle interupts gracefully
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt)
+	go func() {
+		for _ = range signalChan {
+			log.Println("Interrupt, Killing workers")
+			// signal server to quit processing requests
+			quit <- true
+			// wait for server to be finished
+			<-done
+			log.Println("Done.")
+			os.Exit(0)
+		}
+	}()
+
+	// start server
+	server.Serve(quit, done)
+
 }

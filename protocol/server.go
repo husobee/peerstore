@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"time"
 
 	"github.com/pkg/errors"
 )
@@ -40,58 +41,79 @@ func NewServer(address, dataPath string, bufferSize, numWorkers int) (*Server, e
 
 // startWorkers - we will start the number of numWorkers for the server to
 // process requests
-func (s *Server) startWorkers() []chan bool {
-	qChans := []chan bool{}
+func (s *Server) startWorkers() ([]chan bool, []chan bool) {
+	var (
+		qChans = []chan bool{}
+		dChans = []chan bool{}
+	)
 	for i := 0; i < s.ctx.Value("numWorkers").(int); i++ {
-		q := make(chan bool)
-		qChans = append(qChans, q)
-		go func() {
+		var (
+			quit = make(chan bool)
+			done = make(chan bool)
+		)
+		qChans = append(qChans, quit)
+		dChans = append(dChans, done)
+		go func(i int) {
+			log.Printf("Starting worker: %d, waiting for connections", i)
+			defer log.Printf("Ending worker: %d", i)
 			for {
 				select {
 				case conn := <-s.connChan:
 					// perform handling
+					log.Printf("Worker: %d, accepting connection", i)
 					s.handleConnection(conn)
-				case <-q:
+				case <-quit:
 					// quit processing connections
+					log.Printf("Worker: %d, quitting.", i)
+					done <- true
 					return
 				}
 			}
-		}()
+		}(i)
 	}
-	return qChans
+	return qChans, dChans
 }
 
 // Serve - process to serve requests, for each request that we accept
 // as a connection, we will fork the handling of that connection.
-func (s *Server) Serve() chan bool {
-	// create a quit channel, so we can signal server to stop
-	q := make(chan bool)
-	workerQChans := s.startWorkers()
+func (s *Server) Serve(q chan bool, done chan bool) {
+	workerQChans, workerDChans := s.startWorkers()
 	// start goroutine to accept connections
-	go func() {
-		for {
-			select {
-			case <-q:
-				// if we are given a quit signal, signal workers to quit
-				// and then return from serving connections
-				for _, qChan := range workerQChans {
-					qChan <- true
-				}
-				return
-			default:
-				// accept a connection
-				conn, err := s.listener.Accept()
-				if err != nil {
-					log.Printf("ERR in listener accept: %v", err)
-					panic("failed to accept socket")
-				}
-				// pass connection to a worker through channel
-				s.connChan <- conn
+	for {
+		// watch for our quit signal
+		select {
+		case <-q:
+			log.Println("recieved quit signal, shutting down workers")
+			// if we are given a quit signal, signal workers to quit
+			// and then return from serving connections
+			for _, qChan := range workerQChans {
+				qChan <- true
 			}
+			for _, dChan := range workerDChans {
+				<-dChan
+			}
+			log.Println("signaling done.")
+			done <- true
+			return
+		default:
+			// accept a connection
+			log.Println("waiting to accept")
+			s.listener.(*net.TCPListener).SetDeadline(
+				time.Now().Add(2 * time.Second))
+			conn, err := s.listener.Accept()
+			if err != nil {
+				if opErr, ok := err.(*net.OpError); ok {
+					if opErr.Timeout() {
+						continue
+					}
+				}
+				log.Printf("ERR in listener accept: %v", err)
+				panic("failed to accept socket")
+			}
+			// pass connection to a worker through channel
+			s.connChan <- conn
 		}
-	}()
-	// return the quit channel to caller
-	return q
+	}
 }
 
 // handleConnection - this function will "handle" the accepted connection
