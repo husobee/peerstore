@@ -97,7 +97,6 @@ func (s *Server) Serve(q chan bool, done chan bool) {
 			return
 		default:
 			// accept a connection
-			log.Println("waiting to accept")
 			s.listener.(*net.TCPListener).SetDeadline(
 				time.Now().Add(2 * time.Second))
 			conn, err := s.listener.Accept()
@@ -118,6 +117,7 @@ func (s *Server) Serve(q chan bool, done chan bool) {
 
 // handleConnection - this function will "handle" the accepted connection
 // by decoding the request, processing, and returning a response to the request
+// for the lifetime of the connection
 func (s *Server) handleConnection(conn net.Conn) {
 	decoder := gob.NewDecoder(conn)
 	encoder := gob.NewEncoder(conn)

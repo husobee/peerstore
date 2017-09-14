@@ -8,6 +8,7 @@ import (
 	"runtime"
 
 	"github.com/husobee/peerstore/protocol"
+	"github.com/pkg/errors"
 )
 
 var (
@@ -22,7 +23,7 @@ func init() {
 		&addr, "addr", ":3000",
 		"the address for the server to listen")
 	flag.StringVar(
-		&dataPath, "dataPath", "~/.peerstore",
+		&dataPath, "dataPath", "./.peerstore",
 		"the data location for the server to store files")
 	flag.IntVar(
 		&serverBuffer, "serverBuffer", runtime.NumCPU()*20,
@@ -31,6 +32,23 @@ func init() {
 		&serverNumWorkers, "serverNumWorkers", runtime.NumCPU()*2,
 		"the number of server threads for connection processing")
 	flag.Parse()
+}
+
+func validateParams() error {
+	if addr == "" {
+		return errors.New("addr must be set")
+	}
+	if dataPath == "" {
+		return errors.New("dataPath must be set")
+	}
+	info, err := os.Stat(dataPath)
+	if err != nil {
+		return errors.Wrap(err, "error attempting to validate dataPath: ")
+	}
+	if !info.IsDir() {
+		return errors.New("dataPath must be a valid directory")
+	}
+	return nil
 }
 
 func main() {

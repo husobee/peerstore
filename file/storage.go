@@ -27,6 +27,9 @@ func Get(path string, key [20]byte) (io.ReadCloser, error) {
 // Post - create or update a file based on the key, returns
 // boolean success as well as an error
 func Post(path string, key [20]byte, data io.Reader) error {
+	log.Println("opening destination file",
+		fmt.Sprintf("%s/%s", path, hex.EncodeToString(key[:])),
+	)
 	f, err := os.OpenFile(
 		fmt.Sprintf("%s/%s", path, hex.EncodeToString(key[:])),
 		os.O_RDWR|os.O_CREATE, 0600,
@@ -35,10 +38,12 @@ func Post(path string, key [20]byte, data io.Reader) error {
 		log.Println(err)
 		return errors.Wrap(err, "error opening file")
 	}
+	log.Println("Writing file to storage")
 	if _, err := io.Copy(f, data); err != nil {
 		return errors.Wrap(err, "error writing file")
 	}
 
+	log.Println("Closing file to storage")
 	if err := f.Close(); err != nil {
 		log.Println(err)
 		return errors.Wrap(err, "error closing file")
