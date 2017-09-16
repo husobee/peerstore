@@ -1,0 +1,31 @@
+@startuml
+
+actor User
+actor :Operating System:
+actor :Storage Server N:
+
+note top of :Storage Server N:
+    Requests sent directly to
+    Storage Server, correct server
+    is looked up in DHT
+    based on file key
+end note
+
+
+rectangle Client {
+:Storage Server N: <-- (Delete File)
+:Storage Server N: <-- (Get File)
+:Storage Server N: <--(Post File)
+
+User-->(Register Directory)
+User-->(Get File)
+User-->(DeleteFile)
+User -->(Post File)
+(Post File) <|-- (Register Directory): <<extends>>
+
+(Register Directory) --> :Operating System:: Read Directory for Files
+(Post File) --> :Operating System:: Read File
+
+}
+
+@enduml

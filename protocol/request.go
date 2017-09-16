@@ -21,11 +21,14 @@ const (
 	PostFileMethod
 	// DeleteFileMethod - Delete File Method to be used when deleting files
 	DeleteFileMethod
+	// GetSuccessorMethod - Chord Method to get the successor
+	GetSuccessorMethod
 )
 
 var (
 	ValidRequestMethod = map[RequestMethod]bool{
 		GetFileMethod: true, PostFileMethod: true, DeleteFileMethod: true,
+		GetSuccessorMethod: true,
 	}
 )
 
