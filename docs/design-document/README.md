@@ -82,7 +82,7 @@ relevent files amoungst the peers; the file sharing implementation.
 We will start by talking only about the file sharing use cases at this time,
 and will work through the details of the Chord use cases next.
 
-![File Sharing Use Case Diagram Client/Server](./ClientUseCaseDiagram.png)
+![File Sharing Use Case Diagram Client/Server](./ClientUseCaseDiagram.png#center)
 
 ### Component Architectures
 
