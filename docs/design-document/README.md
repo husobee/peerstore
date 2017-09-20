@@ -76,15 +76,28 @@ A few key objectives in this milestone are as follows:
 ### Use Cases
 
 There are a number of use cases that can be split into two independent modules
-within the product.  These two are: the distributed hash table, used to find
+within the milestone.  These two are: the distributed hash table, used to find
 relevent files amoungst the peers; the file sharing implementation.
 
 We will start by talking only about the file sharing use cases at this time,
 and will work through the details of the Chord use cases next.
 
-![File Sharing Use Case Diagram Client/Server](./ClientUseCaseDiagram.png#center)
+![File Sharing Use Case Diagram Client/Server](./Milestone1-FileUseCaseDiagram.png)
+
+As seen, the peer to peer file transmission only requires simple crud methods
+for the server to implement, Post, Get and Delete.  From the client perspective
+the application needs to accept a directory of files which it will register with
+the client, so that each of the files within the directory are posted to the
+peer servers.
+
+![Chord Use Case Diagram](./Milestone1-ChordUseCaseDiagram.png)
+
 
 ### Component Architectures
+
+The components created in this milestone are outlined below:
+
+![Milestone 1 Component Diagram](./Milestone1-ComponentDiagram.png)
 
 ### Discussion (Specification)
 

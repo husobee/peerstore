@@ -1,0 +1,41 @@
+@startuml
+
+package "Chord" {
+    [Local Node]
+    [Remote Node]
+    [Chord Protocol Handlers]
+}
+
+package "Protocol" {
+    [Server]
+    [Transport]
+    [Request]
+    [Response]
+}
+
+[Models]
+
+package "File" {
+    [Block Storage]
+    [File Protocol Handlers]
+}
+
+OS - [Block Storage]
+
+[File Protocol Handlers]->[Server]:"implement handler"
+[Chord Protocol Handlers]->[Server]:"implement handler"
+[Transport]..>[Request]:uses
+[Transport]..>[Response]:uses
+[Server]..>[Request]:uses
+[Server]..>[Response]:uses
+
+[Request]<..[Models]:extends
+[Response]<..[Models]:extends
+
+[Remote Node] <..[Transport]:extends
+[Local Node] <..[Server]:extends
+
+[Remote Node]-[Local Node]: chord protocol
+[Block Storage]..>[Transport]:uses
+
+@enduml
