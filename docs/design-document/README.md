@@ -44,10 +44,10 @@ the project, and thus will be a living document.
 
 ### Definitions
 
-*Peer* - a node participating in the network
-*DHT* - Distributed Hash Table; a mechanism by which one can lookup which peer
+- *Peer* - a node participating in the network
+- *DHT* - Distributed Hash Table; a mechanism by which one can lookup which peer
 in the PeerStore network is holding any given resource.
-*Chord* - [The algorithm](../chord_sigcomm.pdf) used to accomplish a DHT in the
+- *Chord* - [The algorithm](../chord_sigcomm.pdf) used to accomplish a DHT in the
 PeerStore network
 
 ### Structure of Milestone Documentation
