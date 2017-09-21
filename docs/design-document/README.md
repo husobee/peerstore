@@ -182,16 +182,48 @@ in the request and response "Data" fields.
 
 ### Discussion (Specification)
 
+// TODO: Fill in with more details!
+
 
 ### Dependencies
 
 The dependencies used for this project are as follows, followed by a brief
 explaination as to why, and how the help.
 
+- [github.com/pkg/errors](github.com/pkg/errors)
+    - This is not the standard golang error package, and is used because there
+    are some wonderful features, such as errors.Wrap which will wrap the error
+    you get from a given function with a string you pick.  This is extremely
+    helpful for figuring out nested error conditions.
+- [context](https://golang.org/pkg/context/)
+    - This is part of the standard library, but is basically a mechanism by
+    which you can pass unstructured context data along with function calls or
+    structs.  This is used primarily to house number of workers, and channel
+    buffer size in the server.go
+- [encoding/gob](https://golang.org/pkg/encoding/gob/)
+    - This is the encoding package we are using for converting structures into
+    bytes.  Every request is serialized using the gob encoding, and deserialized
+    on the server using the gob encoding.  Even in the business logic we are 
+    serializing and deserializing the higher level request "Data" bytes with
+    this libary
+- [encoding/hex](https://golang.org/pkg/encoding/hex/)
+    - We are using the encoding hex to make clean strings for the file names
+    that we are storing on the various nodes in the Chord DHT.  The file name
+    is used to create a "key" which is used by the Chord algorithm to find
+    which node that file should be stored on.  When it get's stored on the node
+    we write it to a file that is the hex representation of the key
+- [net](https://golang.org/pkg/net/)
+    - The net package is a standard library that we are using to create the 
+    TCPListener for the server to accept network connections on. We also use
+    this package to "Dial" the server with the net.Dial function.
 
+For dependency management we are using the golang tool `dep` which has stores a
+manifest in the repository "GoPkg.toml" which will keep track of all the non
+standard library dependencies and version pin them to a working version.
 
 
 ### Resources
 
  - [The Chord Algorithm](../chord_sigcomm.pdf)
+ - [Golang Documentation](https://golang.org/doc/)
 
