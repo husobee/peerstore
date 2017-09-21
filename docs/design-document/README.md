@@ -133,12 +133,61 @@ The components created in this milestone are outlined below:
 
 ![Milestone 1 Component Diagram](./Milestone1/ComponentDiagram.png)
 
-### Discussion (Specification)
+As seen by the above diagram, there are three primary packages within this
+design:  File, Chord, Protocol.
 
-###
+#### File Package
+
+The file package is solely responsible for everything that has to do with
+reading and writing of files to and from a file system.  The block storage
+component performs the reading and writing for both the client (transport)
+as well as the reading and writing of files for the server.
+
+The file package also employs the protocol handlers for the server aspect of the
+package.  By creating a custom handler type in the server package which we will
+cover shortly, we can effectively hand off the protocol logic to the protocol
+package, and the business logic of what to do with a file to the file package.
+
+#### Protocol Package
+
+Within the Protocol package we have two very distinct primary components, and
+two secondary components.  As a primary component, we have a Server component.
+This component handles all incoming connection processing, and connection
+closing, as well as the method routing based on the type of request.
+
+The server works off of a goroutine pool for connection handling, which is
+user specified.  This is slightly different than how the http package handles
+incoming connection requests, for example, because that package spawns a new
+goroutine per request, which could easily overload the application in a DOS
+type situation.
+
+The Transport primary component within the Protocol package is the opposite of
+a server, it initiates connections to backend servers, and sends requests, and
+waits for responses from the server.
+
+It is pretty clear by now what the two secondary packages are for, Request and
+Response.  Request is the datastructure by which a request is formatted, and
+ultimately packaged for transmission over the connection.  The Response is the
+structure for how the server will respond to any given request.
+
+#### Chord Package
+
+The Chord package handles everything that is required for the Chord algorithm.
+Principally, this package manages the Local Node's finger table, predecessor,
+and performs the search for successors of various keys.
+
+This package, much like the File package, manages the business logic required
+for the chord protocol to operate, including data structures that are imbedded
+in the request and response "Data" fields.
+
+### Discussion (Specification)
 
 
 ### Dependencies
+
+The dependencies used for this project are as follows, followed by a brief
+explaination as to why, and how the help.
+
 
 
 
