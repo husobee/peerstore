@@ -47,8 +47,10 @@ the project, and thus will be a living document.
 - *Peer* - a node participating in the network
 - *DHT* - Distributed Hash Table; a mechanism by which one can lookup which peer
 in the PeerStore network is holding any given resource.
-- *Chord* - [The algorithm](../chord_sigcomm.pdf) used to accomplish a DHT in the
-PeerStore network
+- *Chord* - [The algorithm](../chord_sigcomm.pdf) used to accomplish a DHT in
+the PeerStore network
+- *RPC* - Remote Proceedure Call, a function or method that can be called from a
+peer in the network.
 
 ### Structure of Milestone Documentation
 
@@ -79,25 +81,57 @@ There are a number of use cases that can be split into two independent modules
 within the milestone.  These two are: the distributed hash table, used to find
 relevent files amoungst the peers; the file sharing implementation.
 
-We will start by talking only about the file sharing use cases at this time,
-and will work through the details of the Chord use cases next.
+#### File Sharing Use Cases
 
-![File Sharing Use Case Diagram Client/Server](./Milestone1-FileUseCaseDiagram.png)
+The file sharing protocol developed is based on these high level operations:
+Post; Get; Delete.  These three methods basically enumerate the operations that
+peer nodes will be able to perform against peer nodes via RPC calls.  The
+implementation details of the protocol are outlined further in the Discussion
+section.
+
+Below is a high level use case diagram outlining the particulars of the
+operations that a peer can make against remote peer servers.
+
+![File Sharing Use Case Diagram Client/Server](./Milestone1/FileUseCaseDiagram.png)
 
 As seen, the peer to peer file transmission only requires simple crud methods
-for the server to implement, Post, Get and Delete.  From the client perspective
-the application needs to accept a directory of files which it will register with
-the client, so that each of the files within the directory are posted to the
-peer servers.
+for the server to implement, Post, Get and Delete.  These methods are
+implemented as server handler functions, routed by the method in the request.
 
-![Chord Use Case Diagram](./Milestone1-ChordUseCaseDiagram.png)
+From the client perspective the application in addition to the three methods
+needs to accept a directory of files which it will register with the client, so
+that each of the files within the directory are posted to the peer servers.
+
+#### DHT Routing Use Cases
+
+The routing of which node to store any particular file falls on the DHT.  We are
+implementing the Chord Protocol.  Below are use case diagrams that outline the
+operations a Chord node has to accept and perform against other nodes.
+
+![Chord Use Case Diagram](./Milestone1/ChordUseCaseDiagram.png)
+
+In the bare basic sense, the Chord protocol requires each node to be able to
+accept queries as to whom the successor of a given key would be based on their
+information.  Each node has an understanding of who their successor is and each
+node asks the next if they know the successor of the key given.
+
+As realized this algorithm just described would be very ineffecient.  To speed
+up the lookups the Chord algorithm articulates the need for a finger table,
+which contains a subset of all of it's successor nodes.  In this case the
+LocalNode will call successor locally to see if it's successor would be
+the successor of the key given, and if not finds the node in it's finger table
+who is closest, and asks that node if they are the successor.
+
+When a node initializes or leaves, that node is responsible for fixing it's
+peer's finger table, and predecessors, as well as the job of transferring all
+the keys for which it responsible.
 
 
 ### Component Architectures
 
 The components created in this milestone are outlined below:
 
-![Milestone 1 Component Diagram](./Milestone1-ComponentDiagram.png)
+![Milestone 1 Component Diagram](./Milestone1/ComponentDiagram.png)
 
 ### Discussion (Specification)
 

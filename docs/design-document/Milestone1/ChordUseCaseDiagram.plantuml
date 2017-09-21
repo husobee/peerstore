@@ -1,0 +1,32 @@
+@startuml
+
+
+LocalNode -> (initialize)
+(initialize) <.. (get finger table):extends
+(initialize) <.. (set predecessor): extends
+(initialize) <.. (initiate transfer of values): extends
+(get finger table) -> RemoteNode:rpc
+
+LocalNode -> (leave)
+(leave) <.. (update finger tables):extends
+(leave)<..(set remote successor/predecessor): extends
+(leave)<..(initiate transfer of values):extends
+(leave)<..(set remote predecessor):extends
+
+LocalNode -> (lookup closest finger)
+LocalNode -> (successor)
+LocalNode -> (consistent hash key):sha1
+
+RemoteNode <- (successor):rpc
+
+note left of LocalNode
+  LocalNode is the local node
+end note
+
+note bottom of RemoteNode
+  RemoteNode is any remote node that
+  the LocalNode needs to lookup finger
+  or successor data from
+  end note
+
+@enduml
