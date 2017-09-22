@@ -21,7 +21,7 @@ type RemoteNode struct {
 
 // NewRemoteNode - create a new remote node, which implements ChordNode, wherein
 // we are able to perform queries on this node
-func NewRemoteNode(addr string) (ChordNode, error) {
+func NewRemoteNode(addr string) (*RemoteNode, error) {
 	return &RemoteNode{
 		&models.Node{
 			Addr: addr,

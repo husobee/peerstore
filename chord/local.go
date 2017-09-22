@@ -21,7 +21,7 @@ type LocalNode struct {
 	predecessorMutex *sync.RWMutex
 }
 
-func NewLocalNode(addr string, peer models.Node) (ChordNode, error) {
+func NewLocalNode(addr string, peer models.Node) (*LocalNode, error) {
 	// TODO: need to start up server
 	// TODO: need to start initialize step with the peer
 	return &LocalNode{

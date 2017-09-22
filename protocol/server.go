@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -14,13 +15,15 @@ import (
 
 // Server - base server type, contains a listener to listen for sockets
 type Server struct {
-	listener net.Listener
-	ctx      context.Context
-	connChan chan net.Conn
+	listener     net.Listener
+	ctx          context.Context
+	connChan     chan net.Conn
+	handlerMap   map[RequestMethod]Handler
+	handlerMapMu *sync.RWMutex
 }
 
 // NewServer - create a new server
-func NewServer(address, dataPath string, bufferSize, numWorkers int) (*Server, error) {
+func NewServer(address, dataPath string, bufferSize, numWorkers uint) (*Server, error) {
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return nil, errors.Wrap(err, "failure to create server: ")
@@ -35,7 +38,9 @@ func NewServer(address, dataPath string, bufferSize, numWorkers int) (*Server, e
 		ctx: context.WithValue(
 			context.WithValue(context.Background(), "dataPath", dataPath),
 			"numWorkers", numWorkers),
-		connChan: make(chan net.Conn, bufferSize),
+		connChan:     make(chan net.Conn, bufferSize),
+		handlerMap:   make(map[RequestMethod]Handler),
+		handlerMapMu: new(sync.RWMutex),
 	}, nil
 }
 
@@ -46,14 +51,15 @@ func (s *Server) startWorkers() ([]chan bool, []chan bool) {
 		qChans = []chan bool{}
 		dChans = []chan bool{}
 	)
-	for i := 0; i < s.ctx.Value("numWorkers").(int); i++ {
+	var i uint = 0
+	for ; i < s.ctx.Value("numWorkers").(uint); i++ {
 		var (
 			quit = make(chan bool)
 			done = make(chan bool)
 		)
 		qChans = append(qChans, quit)
 		dChans = append(dChans, done)
-		go func(i int) {
+		go func(i uint) {
 			log.Printf("Starting worker: %d, waiting for connections", i)
 			defer log.Printf("Ending worker: %d", i)
 			for {
@@ -151,7 +157,10 @@ Outer:
 		log.Printf("Got Request: %+v\n", request)
 
 		// lookup the handler to call
-		if handler, ok := MethodHandlerMap[request.Method]; ok {
+		s.handlerMapMu.RLock()
+		handler, ok := s.handlerMap[request.Method]
+		s.handlerMapMu.RUnlock()
+		if ok {
 			encoder.Encode(handler(s.ctx, request))
 			continue Outer
 		}
@@ -161,4 +170,11 @@ Outer:
 			Status: Error,
 		})
 	}
+}
+
+// Handle - add handlers to the server
+func (s *Server) Handle(method RequestMethod, fn Handler) {
+	s.handlerMapMu.Lock()
+	defer s.handlerMapMu.Unlock()
+	s.handlerMap[method] = fn
 }
