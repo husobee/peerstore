@@ -23,6 +23,8 @@ const (
 	DeleteFileMethod
 	// GetSuccessorMethod - Chord Method to get the successor
 	GetSuccessorMethod
+	// GetFingerTableMethod - Chord Method to get the finger table
+	GetFingerTableMethod
 )
 
 var (

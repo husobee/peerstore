@@ -1,7 +1,9 @@
 package chord
 
 import (
+	"bytes"
 	"crypto/sha1"
+	"sync"
 
 	"github.com/husobee/peerstore/models"
 	"github.com/pkg/errors"
@@ -11,12 +13,17 @@ import (
 // datastructure representing a local chord node.
 type LocalNode struct {
 	*models.Node
+	// first record in the finger table is the successor node
 	fingerTable models.FingerTable
-	successor   ChordNode
-	predecessor ChordNode
+	predecessor models.Node
+	// fingerTableMutex - a locking mechanism around the finger table
+	fingerTableMutex *sync.RWMutex
+	predecessorMutex *sync.RWMutex
 }
 
-func NewLocalNode(addr string) (ChordNode, error) {
+func NewLocalNode(addr string, peer models.Node) (ChordNode, error) {
+	// TODO: need to start up server
+	// TODO: need to start initialize step with the peer
 	return &LocalNode{
 		&models.Node{
 			Addr: addr,
@@ -25,34 +32,58 @@ func NewLocalNode(addr string) (ChordNode, error) {
 			),
 		},
 		models.FingerTable{},
-		nil, nil,
+		models.Node{}, new(sync.RWMutex), new(sync.RWMutex),
 	}, nil
 }
 
-func (ln *LocalNode) GetSuccessor(id models.Identifier) (ChordNode, error) {
-	if ln.successor == nil {
-		return nil, errors.New("successor is nil")
+func (ln *LocalNode) Successor(id models.Identifier) (models.Node, error) {
+	ln.fingerTableMutex.RLock()
+	defer ln.fingerTableMutex.RUnlock()
+
+	// if we dont have a finger table, or less than 1 entry, throw error
+	if ln.fingerTable == nil || len(ln.fingerTable) < 1 {
+		return models.Node{}, errors.New("empty finger table, not initialized")
 	}
-	return ln.successor, nil
+	// does the key fall within ln's ID and the first entry of the finger table
+	// if the key is greater than ln.ID and less than ln.successor.ID, return
+	// ln.successor
+	if (bytes.Compare(ln.ID[:], id[:]) == -1 || bytes.Compare(ln.ID[:], id[:]) == 0) && bytes.Compare(ln.fingerTable[0].ID[:], id[:]) == 1 {
+		// return ln.successor in the form of a RemoteNode
+		return ln.fingerTable[0], nil
+	}
+	// okay, we don't know who the successor is, lets ask the closest node
+	// we can who that would be.
+	var closest models.Node
+	for _, finger := range ln.fingerTable {
+		if bytes.Compare(finger.ID[:], id[:]) == -1 || bytes.Compare(ln.ID[:], id[:]) == 0 {
+			// this is less than the successor for finger
+			closest = finger
+		} else {
+			// this is more than successor, so we break here
+			// and ask that node to find the successor for us
+			break
+		}
+	}
+	rn, err := NewRemoteNode(closest.Addr)
+	if err != nil {
+		return models.Node{}, errors.Wrap(err, "failure creating new remote node: ")
+	}
+
+	node, err := rn.Successor(id)
+	if err != nil {
+		errors.Wrap(err, "failure getting successor from remote node: ")
+	}
+
+	return node, nil
 }
 
-func (ln *LocalNode) GetPredecessor(id models.Identifier) (ChordNode, error) {
-	if ln.predecessor == nil {
-		return nil, errors.New("predecessor is nil")
-	}
-	return ln.predecessor, nil
-}
-
-func (ln *LocalNode) GetFingerTable() (models.FingerTable, error) {
+func (ln *LocalNode) FingerTable() (models.FingerTable, error) {
+	ln.fingerTableMutex.RLock()
+	defer ln.fingerTableMutex.RUnlock()
 	return ln.fingerTable, nil
 }
 
-func (ln *LocalNode) SetSuccessor(n ChordNode) error {
-	ln.successor = n
-	return nil
-}
-
-func (ln *LocalNode) SetPredecessor(n ChordNode) error {
+func (ln *LocalNode) SetPredecessor(n models.Node) error {
 	ln.predecessor = n
 	return nil
 }

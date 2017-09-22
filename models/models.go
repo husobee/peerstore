@@ -4,6 +4,7 @@ import "encoding/gob"
 
 func init() {
 	gob.Register(Node{})
+	gob.Register(Identifier{})
 }
 
 type Identifier [20]byte
