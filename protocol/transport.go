@@ -31,6 +31,14 @@ type Transport struct {
 	dec  Decoder
 }
 
+// Close - close the connection transport
+func (t *Transport) Close() {
+	if t.conn != nil {
+		t.conn.Close()
+		t.conn = nil
+	}
+}
+
 // NewTransport - create a new transport structure
 func NewTransport(proto, remote string) (*Transport, error) {
 	conn, err := net.Dial(proto, remote)

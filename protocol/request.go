@@ -14,6 +14,16 @@ func init() {
 // be performed.
 type RequestMethod uint64
 
+var RequestMethodToString = map[RequestMethod]string{
+	GetFileMethod:        "GetFile",
+	PostFileMethod:       "PostFile",
+	DeleteFileMethod:     "DeleteFile",
+	GetSuccessorMethod:   "GetSuccessor",
+	SetPredecessorMethod: "SetPredecessor",
+	GetPredecessorMethod: "GetPredecessor",
+	GetFingerTableMethod: "GetFingerTable",
+}
+
 const (
 	// GetFileMethod - Get File Method to be used when getting files
 	GetFileMethod RequestMethod = 1 << iota
@@ -23,15 +33,12 @@ const (
 	DeleteFileMethod
 	// GetSuccessorMethod - Chord Method to get the successor
 	GetSuccessorMethod
+	// SetPredecessorMethod - Chord Method to set the predecessor
+	SetPredecessorMethod
+	// GetPredecessorMethod - Chord Method to get the predecessor
+	GetPredecessorMethod
 	// GetFingerTableMethod - Chord Method to get the finger table
 	GetFingerTableMethod
-)
-
-var (
-	ValidRequestMethod = map[RequestMethod]bool{
-		GetFileMethod: true, PostFileMethod: true, DeleteFileMethod: true,
-		GetSuccessorMethod: true,
-	}
 )
 
 // Request - the standard request, includes a header,
@@ -50,7 +57,7 @@ func (r *Request) Validate() error {
 		return errors.Wrap(err, "failed to validate request header: ")
 	}
 
-	if !ValidRequestMethod[r.Method] {
+	if _, ok := RequestMethodToString[r.Method]; !ok {
 		return errors.New("failed to validate request method")
 	}
 	return nil

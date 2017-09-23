@@ -3,6 +3,7 @@ package protocol
 import (
 	"context"
 	"encoding/gob"
+	"encoding/hex"
 	"io"
 	"log"
 	"net"
@@ -154,7 +155,9 @@ Outer:
 		// at this point we have a request struct,
 		// we will now figure out what type of message it is and perform
 		// the method specified
-		log.Printf("Got Request: %+v\n", request)
+		log.Printf("Request: %14s - header_key: %s\n",
+			RequestMethodToString[request.Method],
+			hex.EncodeToString(request.Header.Key[:]))
 
 		// lookup the handler to call
 		s.handlerMapMu.RLock()

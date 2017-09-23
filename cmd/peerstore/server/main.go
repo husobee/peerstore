@@ -2,11 +2,13 @@ package main
 
 import (
 	"crypto/sha1"
+	"encoding/hex"
 	"flag"
 	"log"
 	"os"
 	"os/signal"
 	"runtime"
+	"time"
 
 	"github.com/husobee/peerstore/chord"
 	"github.com/husobee/peerstore/file"
@@ -72,6 +74,10 @@ func validateParams() error {
 }
 
 func main() {
+	// validate our command line parameters
+	if err := validateParams(); err != nil {
+		log.Fatalf("failed to validate command line params: %v\n", err)
+	}
 
 	var (
 		// quit - channel to inform the server to stop listening
@@ -102,9 +108,28 @@ func main() {
 		Addr: initialPeerAddr,
 		ID:   sha1.Sum([]byte(addr)),
 	})
+
+	log.Printf("!!! local node: addr=%s, id=%s\n",
+		localNode.Addr,
+		hex.EncodeToString(localNode.ID[:]))
+
 	if err != nil {
-		log.Fatalf("failed to create chord local node: %v\n", err)
+		// error condition happens when node is unable to connect to
+		// the peer specified, we shall log the error, and use an uninitialized
+		// peer for now
+		log.Printf("failed to create chord local node: %v\n", err)
 	}
+
+	// Start stabilizing!
+	go func() {
+		for {
+			select {
+			case <-time.After(time.Second):
+				localNode.Stabilize()
+				// TODO: use quit chan to stop stabilization
+			}
+		}
+	}()
 
 	// create a server to listen on
 	server, err := protocol.NewServer(
@@ -122,6 +147,8 @@ func main() {
 	server.Handle(protocol.DeleteFileMethod, file.DeleteFileHandler)
 	// chord handler routes
 	server.Handle(protocol.GetSuccessorMethod, localNode.SuccessorHandler)
+	server.Handle(protocol.SetPredecessorMethod, localNode.SetPredecessorHandler)
+	server.Handle(protocol.GetPredecessorMethod, localNode.GetPredecessorHandler)
 	server.Handle(protocol.GetFingerTableMethod, localNode.FingerTableHandler)
 
 	// serve requests
