@@ -50,6 +50,7 @@ func NewLocalNode(addr string, peer models.Node) (*LocalNode, error) {
 	return ln, err
 }
 
+// ToNode - Convert LocalNode to just a plain Node
 func (ln LocalNode) ToNode() models.Node {
 	n := models.Node{
 		Addr: ln.Addr,
@@ -156,6 +157,8 @@ func (ln *LocalNode) Stabilize() error {
 	return nil
 }
 
+// SetSuccessor - Set the successor for this local node, which is the 1st ith
+// entry in the finger table
 func (ln *LocalNode) SetSuccessor(node models.Node) error {
 	return ln.fingerTable.SetIth(1, models.Interval{}, node)
 }
@@ -203,6 +206,8 @@ func (ln *LocalNode) Initialize(peer models.Node) error {
 	return nil
 }
 
+// Successor - This is what this is all about, given an Key we will return
+// the node that is responsible for that Key
 func (ln *LocalNode) Successor(id models.Identifier) (models.Node, error) {
 	// does the key fall within ln's ID and the first entry of the finger table
 	// if the key is greater than ln.ID and less than ln.successor.ID, return
@@ -248,6 +253,7 @@ func (ln *LocalNode) Successor(id models.Identifier) (models.Node, error) {
 	return node, nil
 }
 
+// GetPredecessor - Get the predecessor node for this local node
 func (ln *LocalNode) GetPredecessor() (models.Node, error) {
 	ln.predecessorMutex.RLock()
 	defer ln.predecessorMutex.RUnlock()
@@ -255,6 +261,7 @@ func (ln *LocalNode) GetPredecessor() (models.Node, error) {
 	return ln.predecessor, nil
 }
 
+// SetPredecessor - Set the predecessor node for this local node
 func (ln *LocalNode) SetPredecessor(n models.Node) error {
 	ln.predecessorMutex.Lock()
 	defer ln.predecessorMutex.Unlock()

@@ -17,18 +17,18 @@ type RoundTripper interface {
 	RoundTrip(*Request) (Response, error)
 }
 
-type Encoder interface {
+type encoder interface {
 	Encode(interface{}) error
 }
-type Decoder interface {
+type decoder interface {
 	Decode(interface{}) error
 }
 
 // Transport - a transport structure that will implement RoundTripper
 type Transport struct {
 	conn net.Conn
-	enc  Encoder
-	dec  Decoder
+	enc  encoder
+	dec  decoder
 }
 
 // Close - close the connection transport
@@ -79,7 +79,7 @@ type Header struct {
 	DataLength uint64
 }
 
+// Validate - Implement validate for the header validation
 func (h *Header) Validate() error {
-	// TODO: figure out validation of header
 	return nil
 }

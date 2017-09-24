@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"github.com/husobee/peerstore/models"
 	"github.com/pkg/errors"
 )
 
@@ -37,8 +38,9 @@ func NewServer(address, dataPath string, bufferSize, numWorkers uint) (*Server, 
 	return &Server{
 		listener: listener,
 		ctx: context.WithValue(
-			context.WithValue(context.Background(), "dataPath", dataPath),
-			"numWorkers", numWorkers),
+			context.WithValue(
+				context.Background(), models.DataPathContextKey, dataPath),
+			models.NumRequestWorkerContextKey, numWorkers),
 		connChan:     make(chan net.Conn, bufferSize),
 		handlerMap:   make(map[RequestMethod]Handler),
 		handlerMapMu: new(sync.RWMutex),
@@ -52,8 +54,8 @@ func (s *Server) startWorkers() ([]chan bool, []chan bool) {
 		qChans = []chan bool{}
 		dChans = []chan bool{}
 	)
-	var i uint = 0
-	for ; i < s.ctx.Value("numWorkers").(uint); i++ {
+	var i uint
+	for ; i < s.ctx.Value(models.NumRequestWorkerContextKey).(uint); i++ {
 		var (
 			quit = make(chan bool)
 			done = make(chan bool)

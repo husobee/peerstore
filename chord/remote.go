@@ -112,6 +112,7 @@ func (rn *RemoteNode) Successor(id models.Identifier) (models.Node, error) {
 	return node, nil
 }
 
+// SetPredecessor - set the predecessor on a remote node to node
 func (rn *RemoteNode) SetPredecessor(node models.Node) error {
 	// if connection is nil, create a new connection to the remote node
 	if rn.transport == nil {

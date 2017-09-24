@@ -13,15 +13,12 @@ import (
 
 func init() {
 	gob.Register(SuccessorRequest{})
-	gob.Register(SetPredecessorRequest{})
 }
 
+// SuccessorRequest - this is the chord successor request strurture, the ID
+// is the key we are looking to find a successor for.
 type SuccessorRequest struct {
 	ID models.Identifier
-}
-
-type SetPredecessorRequest struct {
-	Node models.Node
 }
 
 // SuccessorHandler - the handler to handle all server calls to get successor for this local node

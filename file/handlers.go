@@ -6,11 +6,13 @@ import (
 	"io"
 
 	"github.com/golang/glog"
+	"github.com/husobee/peerstore/models"
 	"github.com/husobee/peerstore/protocol"
 )
 
+// GetFileHandler - This is the server handler which manages Get File Requests
 func GetFileHandler(ctx context.Context, r *protocol.Request) protocol.Response {
-	var dataPath = ctx.Value("dataPath").(string)
+	var dataPath = ctx.Value(models.DataPathContextKey).(string)
 	var response = protocol.Response{
 		Status: protocol.Success,
 	}
@@ -44,8 +46,9 @@ func GetFileHandler(ctx context.Context, r *protocol.Request) protocol.Response 
 	return response
 }
 
+// PostFileHandler - This is the server handler which manages Post File Requests
 func PostFileHandler(ctx context.Context, r *protocol.Request) protocol.Response {
-	var dataPath = ctx.Value("dataPath").(string)
+	var dataPath = ctx.Value(models.DataPathContextKey).(string)
 	if err := Post(
 		dataPath, r.Header.Key, bytes.NewBuffer(r.Data),
 	); err != nil {
@@ -59,8 +62,9 @@ func PostFileHandler(ctx context.Context, r *protocol.Request) protocol.Response
 	}
 }
 
+// DeleteFileHandler - This is the server handler which manages Delete File Requests
 func DeleteFileHandler(ctx context.Context, r *protocol.Request) protocol.Response {
-	var dataPath = ctx.Value("dataPath").(string)
+	var dataPath = ctx.Value(models.DataPathContextKey).(string)
 	if err := Delete(dataPath, r.Header.Key); err != nil {
 		return protocol.Response{
 			Status: protocol.Error,

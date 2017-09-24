@@ -14,6 +14,7 @@ func init() {
 // be performed.
 type RequestMethod uint64
 
+// RequestMethodToString - Convert from a Request Method to String
 var RequestMethodToString = map[RequestMethod]string{
 	GetFileMethod:        "GetFile",
 	PostFileMethod:       "PostFile",

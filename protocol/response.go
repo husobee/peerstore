@@ -21,6 +21,7 @@ const (
 )
 
 var (
+	// ValidResponseStatus - Used for verification that a response is right
 	ValidResponseStatus = map[ResponseStatus]bool{
 		Success: true, Error: true,
 	}
