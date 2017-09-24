@@ -3,10 +3,11 @@ package models
 import (
 	"encoding/gob"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"math/big"
 	"sync"
+
+	"github.com/pkg/errors"
 )
 
 // ContextKey - this is a type which is used as keys for the context
@@ -69,13 +70,35 @@ const M = 20 * 8
 // Interval - This is the interval in which a successor in the
 // finger table is responsible
 type Interval struct {
-	Low  int
-	High int
+	Low  uint64 // excluded
+	High uint64 // included
+}
+
+func (i Interval) ToString() string {
+	return fmt.Sprintf("low=%d, high=%d", i.Low, i.High)
+}
+
+// KeyToID - helper to convert a key to a chord ring id
+func KeyToID(key Identifier) uint64 {
+	hash := big.NewInt(0)
+	hash.SetBytes(key[:])
+	ID := big.NewInt(0)
+	ID.Mod(hash, big.NewInt(160))
+
+	return ID.Uint64()
+}
+
+// NewInterval - helper to create a new interval based on two nodes
+func NewInterval(start, end Node) Interval {
+	return Interval{
+		Low:  KeyToID(start.ID),
+		High: KeyToID(end.ID),
+	}
 }
 
 // Finger - This is a finger entry
 type Finger struct {
-	Start     int
+	I         uint64
 	Interval  Interval
 	Successor Node
 }
@@ -96,25 +119,25 @@ func NewFingerTable() *FingerTable {
 
 // GetIth - Get the i'th entry from the given finger table, and return that
 // finger.
-func (ft *FingerTable) GetIth(i int) (Finger, error) {
+func (ft *FingerTable) GetIth(i uint64) (Finger, error) {
 	if i < 1 || i > M {
 		return Finger{},
 			errors.New("i'th entry of finger table must be between 1 and 160")
 	}
 	ft.mu.RLock()
 	defer ft.mu.RUnlock()
-	return ft.table[i], nil
+	return ft.table[i-1], nil
 }
 
 // SetIth - Set the i'th entry in a given finger table
-func (ft *FingerTable) SetIth(i int, interval Interval, successor Node) error {
+func (ft *FingerTable) SetIth(i uint64, interval Interval, successor, self Node) error {
 	if i < 1 || i > M {
 		return errors.New("i'th entry of finger table must be between 1 and 160")
 	}
 	ft.mu.Lock()
 	defer ft.mu.Unlock()
-	ft.table[i] = Finger{
-		Start:     i,
+	ft.table[i-1] = Finger{
+		I:         KeyToID(self.ID),
 		Interval:  interval,
 		Successor: successor,
 	}
@@ -126,8 +149,10 @@ func (ft *FingerTable) ToString() string {
 	ft.mu.RLock()
 	var fmtFingerTable = "["
 	for _, v := range ft.table {
-		fmtFingerTable = fmt.Sprintf("%s{%s}, ",
-			fmtFingerTable, v.Successor.ToString())
+		if v.Successor.Addr != "" {
+			fmtFingerTable = fmt.Sprintf("%s%d={interval={%s}, node={%s}}, ",
+				fmtFingerTable, v.I, v.Interval.ToString(), v.Successor.ToString())
+		}
 	}
 	fmtFingerTable += "]"
 	ft.mu.RUnlock()

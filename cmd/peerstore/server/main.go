@@ -125,7 +125,7 @@ func main() {
 	go func() {
 		for {
 			select {
-			case <-time.After(time.Second):
+			case <-time.After(10 * time.Second):
 				localNode.Stabilize()
 				// TODO: use quit chan to stop stabilization
 			}
@@ -151,6 +151,22 @@ func main() {
 	server.Handle(protocol.SetPredecessorMethod, localNode.SetPredecessorHandler)
 	server.Handle(protocol.GetPredecessorMethod, localNode.GetPredecessorHandler)
 	server.Handle(protocol.GetFingerTableMethod, localNode.FingerTableHandler)
+
+	go func() {
+		for {
+			select {
+			case <-time.After(30 * time.Second):
+				hash := sha1.Sum([]byte("hello"))
+
+				node, err := localNode.Successor(models.Identifier(hash))
+				if err != nil {
+					glog.Infof("!!!!!!!!!!!!!!!!! error finding node : %s", err)
+					continue
+				}
+				glog.Infof("!!!!!!!!!!!!!!!!! Hash %d goes to node: %s", models.KeyToID(models.Identifier(hash)), node.ToString())
+			}
+		}
+	}()
 
 	// serve requests
 	server.Serve(quit, done)

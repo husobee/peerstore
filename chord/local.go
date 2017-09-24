@@ -1,6 +1,7 @@
 package chord
 
 import (
+	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
 	"sync"
@@ -24,26 +25,19 @@ type LocalNode struct {
 // NewLocalNode - Creation of the new local node
 func NewLocalNode(addr string, peer models.Node) (*LocalNode, error) {
 	// make a new finger table for this node
-
-	var fingerTable = models.NewFingerTable()
-	fingerTable.SetIth(1, models.Interval{}, models.Node{
+	n := models.Node{
 		Addr: addr,
 		ID: models.Identifier(
 			sha1.Sum([]byte(addr)),
 		),
-	})
-
-	// create a new local node
-	ln := &LocalNode{
-		&models.Node{
-			Addr: addr,
-			ID: models.Identifier(
-				sha1.Sum([]byte(addr)),
-			),
-		},
-		fingerTable,
-		models.Node{}, new(sync.RWMutex),
 	}
+
+	var fingerTable = models.NewFingerTable()
+	// set initial finger table to have self for the whole range
+	ln := &LocalNode{&n, fingerTable, models.Node{}, new(sync.RWMutex)}
+	fingerTable.SetIth(1, models.NewInterval(n, n), n, ln.ToNode())
+	glog.Infof("bootstrapping fingertable: %s", fingerTable.ToString())
+	// create a new local node
 
 	// run the initialization process
 	err := ln.Initialize(peer)
@@ -62,94 +56,196 @@ func (ln LocalNode) ToNode() models.Node {
 // Stabilize - stabilize the chord ring, makes sure we are actually predecessor
 func (ln *LocalNode) Stabilize() error {
 	// call successor's predecessor function to see we we are still the predecessor
-	finger, err := ln.fingerTable.GetIth(1)
+	currentSuccessor, err := ln.Successor(ln.ID)
 	if err != nil {
+		glog.Infof("failed to get successor for stabilize: %s", err)
 		return errors.Wrap(err, "failed to get successor: ")
 	}
 
-	var (
-		currentSuccessor = finger.Successor
-		compare          = currentSuccessor.Compare(ln.ToNode())
-	)
+	glog.Infof("current successor: %s, this: %s", currentSuccessor.ToString(), ln.ToString())
 
-	if currentSuccessor.Addr == "" || compare == 0 {
-		return errors.New("uninitialized successor addr")
-	}
+	// we need to close the loop if successor of this node is nil
+	// if successor is nil, ask every pred in the chain if they have a nil pred
+	// when we find the end of the line, set our successor to that node, and that node's pred
+	// to us thereby closing the ring
+	if ln.Compare(currentSuccessor) == 0 {
+		// if no successor, traverse back through chain and make node with no predecessor
+		// the successor
+		newPredecessor, _ := ln.GetPredecessor()
+		if newPredecessor.Addr != "" {
+			// if the first entry in finger is ourself, then we dont have a successor
+			predecessor := newPredecessor
+			for {
+				predecessorRN, err := NewRemoteNode(predecessor.Addr)
+				if err != nil {
+					glog.Infof("error creating new remote node for predecessor: %v\n", err)
+					break
+				}
 
-	successorRN, err := NewRemoteNode(currentSuccessor.Addr)
-	if err != nil {
-		glog.Infof("error creating new remote node for successor: %v\n", err)
-		errors.Wrap(err, "error creating new remote node for successor: ")
-	}
+				nextPredecessor, err := predecessorRN.GetPredecessor()
+				if err != nil {
+					glog.Infof("error getting new predecessor on remote node: %v\n", err)
+					break
+				}
 
-	currentSuccessorPredecessor, err := successorRN.GetPredecessor()
-	glog.Infof("stabilize for id=%s, successor id=%s thinks id=%s is predecessor\n",
-		hex.EncodeToString(ln.ID[:]),
-		hex.EncodeToString(currentSuccessor.ID[:]),
-		hex.EncodeToString(currentSuccessorPredecessor.ID[:]),
-	)
-
-	if err != nil {
-		glog.Infof("error setting new predecessor on remote node: %v\n", err)
-		errors.Wrap(err, "error setting new predecessor on remote node:")
-	}
-
-	// check if the successor's predecessor is ourself
-	if currentSuccessorPredecessor.Compare(ln.ToNode()) == 0 {
-		// no update! We are still the predecessor
-		glog.Infof("self is still predecessor of successor - %s == %s\n",
-			hex.EncodeToString(ln.ID[:]),
-			hex.EncodeToString(currentSuccessorPredecessor.ID[:]),
-		)
-		return nil
-	} else if currentSuccessorPredecessor.Compare(ln.ToNode()) == 1 {
-		// successor's predecessor is bigger than us, we will set
-		// currentSuccessorPredecessor to our successor, and it's predecessor to us
-		glog.Infof("self is no longer predecessor of successor - %s < %s\n",
-			hex.EncodeToString(ln.ID[:]),
-			hex.EncodeToString(currentSuccessorPredecessor.ID[:]),
-		)
-
-		ln.SetSuccessor(currentSuccessorPredecessor)
-		glog.Infof("self is setting successor to id=%s\n",
-			hex.EncodeToString(currentSuccessorPredecessor.ID[:]),
-		)
-
-		newSuccessorRN, err := NewRemoteNode(currentSuccessorPredecessor.Addr)
-		if err != nil {
-			glog.Infof("error creating new remote node for new successor: %v\n", err)
-			return errors.Wrap(err, "error creating new remote node for new  successor: ")
+				if nextPredecessor.Addr == "" {
+					// predecessor was our last one in the chain
+					ln.SetSuccessor(predecessor)
+					newPredecessorRN, err := NewRemoteNode(predecessor.Addr)
+					if err != nil {
+						glog.Infof("error creating new remote node for predecessor: %v\n", err)
+						break
+					}
+					newPredecessorRN.SetPredecessor(ln.ToNode())
+					break
+				}
+				predecessor = nextPredecessor
+			}
 		}
-
-		// set the new successor's predecessor to ourselves
-		if err := newSuccessorRN.SetPredecessor(models.Node{
-			Addr: ln.Addr, ID: ln.ID,
-		}); err != nil {
-			glog.Infof("error setting new successor's predecessor to self", err)
-			return errors.Wrap(err, "error setting new successor's predecessor to self: ")
-		}
-		glog.Infof("self is setting predecessor of the new successor id=%s to self\n",
-			hex.EncodeToString(ln.ID[:]),
-		)
 	} else {
-		successorRN, err = NewRemoteNode(currentSuccessor.Addr)
+
+		successorRN, err := NewRemoteNode(currentSuccessor.Addr)
 		if err != nil {
 			glog.Infof("error creating new remote node for successor: %v\n", err)
-			errors.Wrap(err, "error creating new remote node for successor: ")
-		}
-		if err := successorRN.SetPredecessor(models.Node{
-			Addr: ln.Addr, ID: ln.ID,
-		}); err != nil {
-			glog.Infof("error resetting successor's predecessor to self", err)
-			return errors.Wrap(err, "error setting new successor's predecessor to self: ")
+			return errors.Wrap(err, "error creating new remote node for successor: ")
 		}
 
-		glog.Infof("stabilize for id=%s, corrected successor id=%s thinks id=%s is predecessor now\n",
+		currentSuccessorPredecessor, err := successorRN.GetPredecessor()
+		glog.Infof("stabilize for id=%s, successor id=%s thinks id=%s is predecessor\n",
 			hex.EncodeToString(ln.ID[:]),
 			hex.EncodeToString(currentSuccessor.ID[:]),
 			hex.EncodeToString(currentSuccessorPredecessor.ID[:]),
 		)
+
+		if err != nil {
+			glog.Infof("error setting new predecessor on remote node: %v\n", err)
+			return errors.Wrap(err, "error setting new predecessor on remote node:")
+		}
+
+		lnID := models.KeyToID(ln.ID)
+		succPredID := models.KeyToID(currentSuccessorPredecessor.ID)
+		succID := models.KeyToID(currentSuccessor.ID)
+
+		if succPredID == lnID {
+			// no update! We are still the predecessor
+			glog.Infof("self is still predecessor of successor - %s == %s\n",
+				hex.EncodeToString(ln.ID[:]),
+				hex.EncodeToString(currentSuccessorPredecessor.ID[:]),
+			)
+			return nil
+		}
+
+		if succPredID < succID {
+			if succPredID < lnID && lnID < succID {
+				// change the successor to use ln as predecessor
+				successorRN, err = NewRemoteNode(currentSuccessor.Addr)
+				if err != nil {
+					glog.Infof("error creating new remote node for successor: %v\n", err)
+					errors.Wrap(err, "error creating new remote node for successor: ")
+				}
+				glog.Info("!!! succPredID < lnID -> CORRECTING HERE")
+				if err := successorRN.SetPredecessor(models.Node{
+					Addr: ln.Addr, ID: ln.ID,
+				}); err != nil {
+					glog.Infof("error resetting successor's predecessor to self", err)
+					return errors.Wrap(err, "error setting new successor's predecessor to self: ")
+				}
+
+				glog.Infof("stabilize for id=%s, corrected successor id=%s thinks id=%s is predecessor now\n",
+					hex.EncodeToString(ln.ID[:]),
+					hex.EncodeToString(currentSuccessor.ID[:]),
+					hex.EncodeToString(currentSuccessorPredecessor.ID[:]),
+				)
+			} else {
+				// change ln successor to new successor pred
+				glog.Infof("self is no longer predecessor of successor - %s < %s\n",
+					hex.EncodeToString(ln.ID[:]),
+					hex.EncodeToString(currentSuccessorPredecessor.ID[:]),
+				)
+
+				ln.SetSuccessor(currentSuccessorPredecessor)
+				glog.Infof("self is setting successor to id=%s\n",
+					hex.EncodeToString(currentSuccessorPredecessor.ID[:]),
+				)
+
+				newSuccessorRN, err := NewRemoteNode(currentSuccessorPredecessor.Addr)
+				if err != nil {
+					glog.Infof("error creating new remote node for new successor: %v\n", err)
+					return errors.Wrap(err, "error creating new remote node for new  successor: ")
+				}
+
+				// set the new successor's predecessor to ourselves
+				if err := newSuccessorRN.SetPredecessor(models.Node{
+					Addr: ln.Addr, ID: ln.ID,
+				}); err != nil {
+					glog.Infof("error setting new successor's predecessor to self", err)
+					return errors.Wrap(err, "error setting new successor's predecessor to self: ")
+				}
+				glog.Infof("self is setting predecessor of the new successor id=%s to self\n",
+					hex.EncodeToString(ln.ID[:]),
+				)
+			}
+		} else {
+			if succPredID < lnID || lnID < succID {
+				// use new succ pred
+				// change ln successor to new successor pred
+				glog.Infof("self is no longer predecessor of successor - %s < %s\n",
+					hex.EncodeToString(ln.ID[:]),
+					hex.EncodeToString(currentSuccessorPredecessor.ID[:]),
+				)
+
+				glog.Infof("!!! lnID < succPredID && succPredID < succID : %d < %d && %d < %d",
+					lnID, succPredID, succPredID, succID,
+				)
+				ln.SetSuccessor(currentSuccessorPredecessor)
+				glog.Infof("self is setting successor to id=%s\n",
+					hex.EncodeToString(currentSuccessorPredecessor.ID[:]),
+				)
+
+				newSuccessorRN, err := NewRemoteNode(currentSuccessorPredecessor.Addr)
+				if err != nil {
+					glog.Infof("error creating new remote node for new successor: %v\n", err)
+					return errors.Wrap(err, "error creating new remote node for new  successor: ")
+				}
+
+				// set the new successor's predecessor to ourselves
+				if err := newSuccessorRN.SetPredecessor(models.Node{
+					Addr: ln.Addr, ID: ln.ID,
+				}); err != nil {
+					glog.Infof("error setting new successor's predecessor to self", err)
+					return errors.Wrap(err, "error setting new successor's predecessor to self: ")
+				}
+				glog.Infof("self is setting predecessor of the new successor id=%s to self\n",
+					hex.EncodeToString(ln.ID[:]),
+				)
+
+			} else {
+				// change the successor to use ln as predecessor
+				successorRN, err = NewRemoteNode(currentSuccessor.Addr)
+				if err != nil {
+					glog.Infof("error creating new remote node for successor: %v\n", err)
+					return errors.Wrap(err, "error creating new remote node for successor: ")
+				}
+				glog.Info("!!!CORRECTING HERE")
+				glog.Infof("!!! lnID < succPredID && succPredID < succID : %d < %d && %d < %d",
+					lnID, succPredID, succPredID, succID,
+				)
+				if err := successorRN.SetPredecessor(models.Node{
+					Addr: ln.Addr, ID: ln.ID,
+				}); err != nil {
+					glog.Infof("error resetting successor's predecessor to self", err)
+					return errors.Wrap(err, "error setting new successor's predecessor to self: ")
+				}
+
+				glog.Infof("stabilize for id=%s, corrected successor id=%s thinks id=%s is predecessor now\n",
+					hex.EncodeToString(ln.ID[:]),
+					hex.EncodeToString(currentSuccessor.ID[:]),
+					hex.EncodeToString(currentSuccessorPredecessor.ID[:]),
+				)
+			}
+		}
 	}
+
 	// if not, set this node's successor to the predecessor, and update the new
 	// successor with us as it's predecessor
 
@@ -160,13 +256,14 @@ func (ln *LocalNode) Stabilize() error {
 // SetSuccessor - Set the successor for this local node, which is the 1st ith
 // entry in the finger table
 func (ln *LocalNode) SetSuccessor(node models.Node) error {
-	return ln.fingerTable.SetIth(1, models.Interval{}, node)
+	return ln.fingerTable.SetIth(1, models.NewInterval(ln.ToNode(), node), node, ln.ToNode())
 }
 
 // Initialize - initialize the chord node
 func (ln *LocalNode) Initialize(peer models.Node) error {
 	// create a new remote node and transport
 	glog.Infof("this node: %s\n", ln.ToString())
+	glog.Infof("initial finger table: %s\n", ln.fingerTable.ToString())
 
 	glog.Infof("initializing chord node against remote: %s\n", peer.ToString())
 
@@ -179,13 +276,14 @@ func (ln *LocalNode) Initialize(peer models.Node) error {
 
 	// call successor on remote node with our ID to figure out our successor
 	successor, err := rn.Successor(ln.ID)
-	glog.Infof("recieved successor from remote: %s\n", successor.ToString())
 
 	if err != nil {
 		glog.Infof("failed initializing chord node against remote: %v\n", err)
 		return errors.Wrap(err,
 			"failed to initialize, could not get successor: ")
 	}
+
+	glog.Infof("recieved successor from remote: %s\n", successor.ToString())
 
 	// update the first finger to include successor
 	ln.SetSuccessor(successor)
@@ -198,6 +296,7 @@ func (ln *LocalNode) Initialize(peer models.Node) error {
 		errors.Wrap(err, "error creating new remote node for successor: ")
 	}
 
+	glog.Infof("!!! should only initialize once")
 	if err := successorRN.SetPredecessor(models.Node{Addr: ln.Addr, ID: ln.ID}); err != nil {
 		glog.Infof("error setting new predecessor on remote node: %v\n", err)
 		errors.Wrap(err, "error setting new predecessor on remote node:")
@@ -206,49 +305,71 @@ func (ln *LocalNode) Initialize(peer models.Node) error {
 	return nil
 }
 
+// ClosestPrecedingNode - Find the node that directly preceeds ID
+// closest preceeding node
+func (ln *LocalNode) ClosestPrecedingNode(id models.Identifier) (models.Node, error) {
+	// convert hash to big int
+	lnID := models.KeyToID(ln.ID)
+	nID := models.KeyToID(id)
+
+	for i := models.M; i >= 1; i-- {
+		ith, err := ln.fingerTable.GetIth(uint64(i))
+		ithSuccessorID := models.KeyToID(ith.Successor.ID)
+
+		if err != nil {
+			return models.Node{}, errors.Wrap(err, "failed to get closest preceding: ")
+		}
+
+		if ith.Successor.Addr == "" {
+			continue
+		}
+
+		// if ith.Successor is within lnID and nID
+		if lnID < nID {
+			if lnID < ithSuccessorID && ithSuccessorID < nID {
+				glog.Infof("closest preceding node to id=%s is %s", models.KeyToID(id), ith.Successor.ToString())
+				return ith.Successor, nil
+			}
+		} else {
+			if lnID < ithSuccessorID || ithSuccessorID < nID {
+				glog.Infof("closest preceding node to id=%s is %s", models.KeyToID(id), ith.Successor.ToString())
+				return ith.Successor, nil
+			}
+		}
+	}
+	glog.Infof("closest preceding node to id=%s is %s", models.KeyToID(id), ln.ToString())
+	return ln.ToNode(), nil
+}
+
 // Successor - This is what this is all about, given an Key we will return
 // the node that is responsible for that Key
 func (ln *LocalNode) Successor(id models.Identifier) (models.Node, error) {
 	// does the key fall within ln's ID and the first entry of the finger table
 	// if the key is greater than ln.ID and less than ln.successor.ID, return
 	// ln.successor
-
-	finger, _ := ln.fingerTable.GetIth(1)
-	if (ln.CompareID(id) == -1 || ln.CompareID(id) == 0) && finger.Successor.CompareID(id) == 1 {
-		return finger.Successor, nil
+	nPrime, err := ln.ClosestPrecedingNode(id)
+	if err != nil {
+		return nPrime, errors.Wrap(err, "failed to get successor: ")
 	}
-	// okay, we don't know who the successor is, lets ask the closest node
-	// we can who that would be.
-	var closest models.Node
-
-	for i := 1; i < models.M; i++ {
-		finger, _ := ln.fingerTable.GetIth(i)
-		if finger.Successor.CompareID(id) == -1 || ln.CompareID(id) == 0 {
-			// this is less than the successor for finger
-			closest = finger.Successor
-		} else {
-			// this is more than successor, so we break here
-			// and ask that node to find the successor for us
-			break
-		}
+	glog.Infof("successor called: based on finger table, goto: %s", nPrime.ToString())
+	glog.Infof("finger table: %s", ln.fingerTable.ToString())
+	// if we are the nPrime, return self
+	if bytes.Compare(nPrime.ID[:], ln.ID[:]) == 0 {
+		return ln.ToNode(), nil
 	}
 
-	if closest.Addr == "" {
-		// no closest addr, unsure if this node is the one, return our id
-		return models.Node{ID: ln.ID, Addr: ln.Addr}, nil
-	}
-
-	rn, err := NewRemoteNode(closest.Addr)
+	// call whoever we think is closest
+	rn, err := NewRemoteNode(nPrime.Addr)
 	if err != nil {
 		return models.Node{}, errors.Wrap(err, "failure creating new remote node: ")
 	}
 
+	glog.Infof("contacting node: %s\n", nPrime.ToString())
 	node, err := rn.Successor(id)
-	glog.Infof("contacting node: %v\n", closest)
-	glog.Infof("recieved successor from remote rpc call: %v\n", node)
 	if err != nil {
-		errors.Wrap(err, "failure getting successor from remote node: ")
+		return models.Node{}, errors.Wrap(err, "failure getting successor from remote node: ")
 	}
+	glog.Infof("recieved successor from remote rpc call: %s\n", node.ToString())
 
 	return node, nil
 }
@@ -265,7 +386,35 @@ func (ln *LocalNode) GetPredecessor() (models.Node, error) {
 func (ln *LocalNode) SetPredecessor(n models.Node) error {
 	ln.predecessorMutex.Lock()
 	defer ln.predecessorMutex.Unlock()
-	ln.predecessor = n
-	glog.Infof("predescessor set to: %s\n", ln.predecessor.ToString())
+
+	lnID := models.KeyToID(ln.ID)
+	nID := models.KeyToID(n.ID)
+	pID := models.KeyToID(ln.predecessor.ID)
+
+	if ln.predecessor.Addr == "" {
+		ln.predecessor = n
+		glog.Infof("predescessor set to: %s\n", ln.predecessor.ToString())
+		return nil
+	}
+
+	if pID < lnID {
+		// easy, no wrapping
+		if pID < nID && nID < lnID {
+			// yep, closer, change it
+			ln.predecessor = n
+			glog.Infof("predescessor set to: %s\n", ln.predecessor.ToString())
+			return nil
+		}
+		return errors.New("not updating as new isn't between")
+	} else {
+		// not easy, wrapping around the horn
+		if nID < lnID || pID < nID {
+			// yep, closer, change it
+			ln.predecessor = n
+			glog.Infof("predescessor set to: %s\n", ln.predecessor.ToString())
+			return nil
+		}
+		return errors.New("not updating as new isn't between")
+	}
 	return nil
 }
