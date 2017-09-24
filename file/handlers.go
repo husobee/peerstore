@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"log"
 
+	"github.com/golang/glog"
 	"github.com/husobee/peerstore/protocol"
 )
 
@@ -17,7 +17,7 @@ func GetFileHandler(ctx context.Context, r *protocol.Request) protocol.Response 
 	// perform file get based on key
 	buf, err := Get(dataPath, r.Header.Key)
 	if err != nil {
-		log.Printf("ERR: %v\n", err)
+		glog.Infof("ERR: %v\n", err)
 		// write the get file error out.
 		return protocol.Response{
 			Status: protocol.Error,
@@ -33,7 +33,7 @@ func GetFileHandler(ctx context.Context, r *protocol.Request) protocol.Response 
 				// file is fully read, continue
 				continue
 			}
-			log.Printf("ERR: %v\n", err)
+			glog.Infof("ERR: %v\n", err)
 			buf.Close()
 			return protocol.Response{
 				Status: protocol.Error,
@@ -49,7 +49,7 @@ func PostFileHandler(ctx context.Context, r *protocol.Request) protocol.Response
 	if err := Post(
 		dataPath, r.Header.Key, bytes.NewBuffer(r.Data),
 	); err != nil {
-		log.Printf("ERR: %s", err.Error())
+		glog.Infof("ERR: %s", err.Error())
 		return protocol.Response{
 			Status: protocol.Error,
 		}

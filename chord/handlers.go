@@ -5,8 +5,8 @@ import (
 	"context"
 	"encoding/gob"
 	"encoding/hex"
-	"log"
 
+	"github.com/golang/glog"
 	"github.com/husobee/peerstore/models"
 	"github.com/husobee/peerstore/protocol"
 )
@@ -41,7 +41,7 @@ func (ln *LocalNode) SuccessorHandler(ctx context.Context, r *protocol.Request) 
 
 	err := dec.Decode(in)
 	if err != nil {
-		log.Printf("decode successor request error: %v\n", err)
+		glog.Infof("decode successor request error: %v\n", err)
 		return protocol.Response{
 			Status: protocol.Error,
 		}
@@ -49,13 +49,13 @@ func (ln *LocalNode) SuccessorHandler(ctx context.Context, r *protocol.Request) 
 
 	// this point we have the ID, time to call successor on ln
 	node, err := ln.Successor(in.ID)
-	log.Printf("successor found: addr=%s, id=%s\n",
+	glog.Infof("successor found: addr=%s, id=%s\n",
 		node.Addr,
 		hex.EncodeToString(node.ID[:]))
 
 	enc := gob.NewEncoder(out)
 	if err := enc.Encode(node); err != nil {
-		log.Printf("encode successor response error: %v\n", err)
+		glog.Infof("encode successor response error: %v\n", err)
 		return protocol.Response{
 			Status: protocol.Error,
 		}
@@ -63,7 +63,7 @@ func (ln *LocalNode) SuccessorHandler(ctx context.Context, r *protocol.Request) 
 	// write the response to the bytes of the response data
 	response.Data = out.Bytes()
 
-	log.Printf("response for successor handler: Node.Addr=%s, Node.ID=%s\n",
+	glog.Infof("response for successor handler: Node.Addr=%s, Node.ID=%s\n",
 		node.Addr,
 		hex.EncodeToString(node.ID[:]))
 
@@ -81,7 +81,7 @@ func (ln *LocalNode) GetPredecessorHandler(ctx context.Context, r *protocol.Requ
 	enc := gob.NewEncoder(out)
 	predecessor, _ := ln.GetPredecessor()
 	if err := enc.Encode(predecessor); err != nil {
-		log.Printf("encode successor response error: %v\n", err)
+		glog.Infof("encode successor response error: %v\n", err)
 		return protocol.Response{
 			Status: protocol.Error,
 		}
@@ -89,7 +89,7 @@ func (ln *LocalNode) GetPredecessorHandler(ctx context.Context, r *protocol.Requ
 	// write the response to the bytes of the response data
 	response.Data = out.Bytes()
 
-	log.Printf("response for get predecessor handler: Node.Addr=%s, Node.ID=%s\n",
+	glog.Infof("response for get predecessor handler: Node.Addr=%s, Node.ID=%s\n",
 		predecessor.Addr,
 		hex.EncodeToString(predecessor.ID[:]))
 
@@ -112,7 +112,7 @@ func (ln *LocalNode) SetPredecessorHandler(ctx context.Context, r *protocol.Requ
 
 	err := dec.Decode(in)
 	if err != nil {
-		log.Printf("decode successor request error: %v\n", err)
+		glog.Infof("decode successor request error: %v\n", err)
 		return protocol.Response{
 			Status: protocol.Error,
 		}
@@ -121,14 +121,14 @@ func (ln *LocalNode) SetPredecessorHandler(ctx context.Context, r *protocol.Requ
 	// set the predecessor in ln
 	err = ln.SetPredecessor(*in)
 	if err != nil {
-		log.Printf("set predecessor failed: %v\n", err)
+		glog.Infof("set predecessor failed: %v\n", err)
 		return protocol.Response{
 			Status: protocol.Error,
 		}
 	}
 
 	newPredecessor, _ := ln.GetPredecessor()
-	log.Printf("!!! Set New Predecessor: Node.Addr=%s, Node.ID=%s\n",
+	glog.Infof("!!! Set New Predecessor: Node.Addr=%s, Node.ID=%s\n",
 		newPredecessor.Addr,
 		hex.EncodeToString(newPredecessor.ID[:]))
 

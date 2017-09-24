@@ -5,12 +5,12 @@ import (
 	"encoding/gob"
 	"encoding/hex"
 	"io"
-	"log"
 	"net"
 	"os"
 	"sync"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
 
@@ -61,17 +61,17 @@ func (s *Server) startWorkers() ([]chan bool, []chan bool) {
 		qChans = append(qChans, quit)
 		dChans = append(dChans, done)
 		go func(i uint) {
-			log.Printf("Starting worker: %d, waiting for connections", i)
-			defer log.Printf("Ending worker: %d", i)
+			glog.Infof("Starting worker: %d, waiting for connections", i)
+			defer glog.Infof("Ending worker: %d", i)
 			for {
 				select {
 				case conn := <-s.connChan:
 					// perform handling
-					log.Printf("Worker: %d, accepting connection", i)
+					glog.Infof("Worker: %d, accepting connection", i)
 					s.handleConnection(conn)
 				case <-quit:
 					// quit processing connections
-					log.Printf("Worker: %d, quitting.", i)
+					glog.Infof("Worker: %d, quitting.", i)
 					done <- true
 					return
 				}
@@ -90,7 +90,7 @@ func (s *Server) Serve(q chan bool, done chan bool) {
 		// watch for our quit signal
 		select {
 		case <-q:
-			log.Println("recieved quit signal, shutting down workers")
+			glog.Info("recieved quit signal, shutting down workers")
 			// if we are given a quit signal, signal workers to quit
 			// and then return from serving connections
 			for _, qChan := range workerQChans {
@@ -99,7 +99,7 @@ func (s *Server) Serve(q chan bool, done chan bool) {
 			for _, dChan := range workerDChans {
 				<-dChan
 			}
-			log.Println("signaling done.")
+			glog.Info("signaling done.")
 			done <- true
 			return
 		default:
@@ -113,7 +113,7 @@ func (s *Server) Serve(q chan bool, done chan bool) {
 						continue
 					}
 				}
-				log.Printf("ERR in listener accept: %v", err)
+				glog.Infof("ERR in listener accept: %v", err)
 				panic("failed to accept socket")
 			}
 			// pass connection to a worker through channel
@@ -133,7 +133,7 @@ Outer:
 		var request = new(Request)
 		err := decoder.Decode(request)
 		if err != nil {
-			log.Printf("ERR: %v\n", err)
+			glog.Infof("ERR: %v\n", err)
 			if err == io.EOF {
 				// the connection has hung up.
 				return
@@ -145,7 +145,7 @@ Outer:
 		}
 
 		if request.Validate(); err != nil {
-			log.Printf("ERR: %v\n", err)
+			glog.Infof("ERR: %v\n", err)
 			// write the validation error out.
 			encoder.Encode(Response{
 				Status: Error,
@@ -155,7 +155,7 @@ Outer:
 		// at this point we have a request struct,
 		// we will now figure out what type of message it is and perform
 		// the method specified
-		log.Printf("Request: %14s - header_key: %s\n",
+		glog.Infof("Request: %14s - header_key: %s\n",
 			RequestMethodToString[request.Method],
 			hex.EncodeToString(request.Header.Key[:]))
 
@@ -168,7 +168,7 @@ Outer:
 			continue Outer
 		}
 		// no handler to call
-		log.Printf("Request is an Unknown Request")
+		glog.Infof("Request is an Unknown Request")
 		encoder.Encode(Response{
 			Status: Error,
 		})

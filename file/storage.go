@@ -4,9 +4,9 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"log"
 	"os"
 
+	"github.com/golang/glog"
 	"github.com/pkg/errors"
 )
 
@@ -18,7 +18,7 @@ func Get(path string, key [20]byte) (io.ReadCloser, error) {
 		os.O_RDWR|os.O_CREATE, 0600,
 	)
 	if err != nil {
-		log.Println(err)
+		glog.Info(err)
 		return f, errors.Wrap(err, "error opening file")
 	}
 	return f, err
@@ -27,7 +27,7 @@ func Get(path string, key [20]byte) (io.ReadCloser, error) {
 // Post - create or update a file based on the key, returns
 // boolean success as well as an error
 func Post(path string, key [20]byte, data io.Reader) error {
-	log.Println("opening destination file",
+	glog.Info("opening destination file",
 		fmt.Sprintf("%s/%s", path, hex.EncodeToString(key[:])),
 	)
 	f, err := os.OpenFile(
@@ -35,17 +35,17 @@ func Post(path string, key [20]byte, data io.Reader) error {
 		os.O_RDWR|os.O_CREATE, 0600,
 	)
 	if err != nil {
-		log.Println(err)
+		glog.Info(err)
 		return errors.Wrap(err, "error opening file")
 	}
-	log.Println("Writing file to storage")
+	glog.Info("Writing file to storage")
 	if _, err := io.Copy(f, data); err != nil {
 		return errors.Wrap(err, "error writing file")
 	}
 
-	log.Println("Closing file to storage")
+	glog.Info("Closing file to storage")
 	if err := f.Close(); err != nil {
-		log.Println(err)
+		glog.Info(err)
 		return errors.Wrap(err, "error closing file")
 	}
 	return nil

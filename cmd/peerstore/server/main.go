@@ -4,12 +4,12 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"flag"
-	"log"
 	"os"
 	"os/signal"
 	"runtime"
 	"time"
 
+	"github.com/golang/glog"
 	"github.com/husobee/peerstore/chord"
 	"github.com/husobee/peerstore/file"
 	"github.com/husobee/peerstore/models"
@@ -74,9 +74,10 @@ func validateParams() error {
 }
 
 func main() {
+	defer glog.Flush()
 	// validate our command line parameters
 	if err := validateParams(); err != nil {
-		log.Fatalf("failed to validate command line params: %v\n", err)
+		glog.Fatalf("failed to validate command line params: %v\n", err)
 	}
 
 	var (
@@ -93,12 +94,12 @@ func main() {
 	signal.Notify(signalChan, os.Interrupt)
 	go func() {
 		for _ = range signalChan {
-			log.Println("Interrupt, Killing workers")
+			glog.Info("Interrupt, Killing workers")
 			// signal server to quit processing requests
 			quit <- true
 			// wait for server to be finished
 			<-done
-			log.Println("Done.")
+			glog.Info("Done.")
 			os.Exit(0)
 		}
 	}()
@@ -109,7 +110,7 @@ func main() {
 		ID:   sha1.Sum([]byte(addr)),
 	})
 
-	log.Printf("!!! local node: addr=%s, id=%s\n",
+	glog.Infof("!!! local node: addr=%s, id=%s\n",
 		localNode.Addr,
 		hex.EncodeToString(localNode.ID[:]))
 
@@ -117,7 +118,7 @@ func main() {
 		// error condition happens when node is unable to connect to
 		// the peer specified, we shall log the error, and use an uninitialized
 		// peer for now
-		log.Printf("failed to create chord local node: %v\n", err)
+		glog.Infof("failed to create chord local node: %v\n", err)
 	}
 
 	// Start stabilizing!
@@ -135,10 +136,10 @@ func main() {
 	server, err := protocol.NewServer(
 		addr, dataPath, requestQueueBuffer, requestNumWorkers)
 	if err != nil {
-		log.Panicf("Failed to create new server: %v", err)
+		glog.Fatalf("Failed to create new server: %v", err)
 	}
 
-	log.Println("Starting server - ",
+	glog.Infof("Starting server - %s, %s, %d, %d",
 		addr, dataPath, requestQueueBuffer, requestNumWorkers)
 
 	// file handler routes

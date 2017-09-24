@@ -112,46 +112,6 @@ func (rn *RemoteNode) Successor(id models.Identifier) (models.Node, error) {
 	return node, nil
 }
 
-func (rn *RemoteNode) Predecessor(id models.Identifier) (ChordNode, error) {
-	return rn, nil
-}
-
-func (rn *RemoteNode) FingerTable() (models.FingerTable, error) {
-	// if connection is nil, create a new connection to the remote node
-	if rn.transport == nil {
-		var err error
-		if rn.transport, err = protocol.NewTransport("tcp", rn.Addr); err != nil {
-			// we had an error setting up our connection
-			return nil, errors.Wrap(err, "failed creating transport: ")
-		}
-	}
-	// send request to the remote
-	resp, err := rn.transport.RoundTrip(&protocol.Request{
-		Header: protocol.Header{
-			Key: rn.ID,
-		},
-		Method: protocol.GetFingerTableMethod,
-	})
-
-	rn.transport.Close()
-
-	if err != nil {
-		return nil, errors.Wrap(err, "failed round trip: ")
-	}
-
-	// decode the response body into a finger table object
-	var (
-		buf         = bytes.NewBuffer(resp.Data)
-		fingerTable = models.FingerTable{}
-	)
-	dec := gob.NewDecoder(buf)
-	if err := dec.Decode(&fingerTable); err != nil {
-		errors.Wrap(err, "failure decoding fingerTable response from body")
-	}
-
-	return fingerTable, nil
-}
-
 func (rn *RemoteNode) SetPredecessor(node models.Node) error {
 	// if connection is nil, create a new connection to the remote node
 	if rn.transport == nil {
@@ -184,9 +144,5 @@ func (rn *RemoteNode) SetPredecessor(node models.Node) error {
 		return errors.Wrap(err, "failed round trip: ")
 	}
 
-	return nil
-}
-
-func (rn *RemoteNode) UpdateFingerTable(index int, n models.Node) error {
 	return nil
 }
