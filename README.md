@@ -7,16 +7,44 @@ PeerStore is a peer to peer file storage and sharing product.
 ### How to Build
 
 ```bash
-# project requires golang
-if [[ -z $GOPATH ]]; then
-    mkdir -p ~/golang/ && export GOPATH=~/golang/
-fi
 
-make test # to perform tests, will output code coverage levels
-make lint # will perform linting against the code
-make vet # will perform go vet against the code
-make release # will create a "releases/" dir and build windows/mac/linux binaries
+mkdir -p ~/golang/src/github.com/husobee/
+tar -zxf /home/test/peerstore.tar.gz -C ~/golang/src/github.com/husobee/
+GOPATH=~/golang/ go get -u ./...
+GOPATH=~/golang/ make linux # to just make the linux exe
+GOPATH=~/golang/ make release # will create a "releases/" dir and build windows/mac/linux binaries
 ```
+
+### How to Run
+
+Starting a peerstore server:
+
+```
+./release/peerstore_server-latest-linux-amd64 -initialPeerAddr :3000 -addr :3001 -dataPath .peerstore/3001
+```
+
+I would suggest if you run more than one to use a different -dataPath for each
+server running.  That will allow you to see the particular keys that are loaded
+into that server.  If you are starting the first server the initial peer addr
+is not that important.
+
+
+Starting the peerstore client:
+
+```
+./release/peerstore_client-latest-linux-amd64 -peerAddr :3001 -localPath ~/peerstore/ -operation backup
+```
+This will take everything from `~/peerstore/` directory, recursively, and load
+it into the server at peerAddr, which is port :3001 on localhost in this example
+
+```
+./release/peerstore_client-latest-linux-amd64 -filedest ~/test.txt.restored -peerAddr :3001 -filename ~/peerstore/test.txt -operation getfile
+```
+
+This command will restore the file from ~/peerstore/test.txt to the file called
+~/test.txt.restored
+
+
 
 ## Description
 
