@@ -182,8 +182,150 @@ in the request and response "Data" fields.
 
 ### Discussion (Specification)
 
-// TODO: Fill in with more details!
+At it's core, this is a service that will house copies of files.  That being the
+case, it was very important that we have a sold mechanism in place to handling
+file requests, be them upload or download or deletes.  To this end we created a
+request processing threadpool, where you are able to specify the number of
+workers and the amount of buffer those workers are allowed to have for queuing
+messages.
 
+The entire server design is really simple.  The server houses a map of request
+methods to handlers, and when a particular request has a particular method, that
+request is passed then to the handler it is mapped to.  A handler is merely
+a function that takes in a request, and produces a response.  The server will
+take that common response structure and wire serialize it.
+
+The serialization we are using for both request's and responses is the go
+built in serialization, called `gob` which is listed in the dependencies.  This
+allowed us to have an effecient wire protocol that seamlessly will turn into go
+specific datastructures.
+
+There is validation built into the request/response libraries, which include
+valid options for methods, and response types.
+
+Any given server in the cluster is able to accept file handling duties, and it
+is up to the client to figure out the appropriate resource to push/pull files
+from.
+
+From the client perspective we have a `transport` package which has a
+RoundTripper interface.  This works exactly the opposite of the server request
+response scheme, in that the round tripper takes a request, dials the server,
+transmits the request, and waits for the response before handing a response
+back to the caller.
+
+#### DHT Discussion
+
+The chord protocol was chosen for this project.  When you start up a server,
+you need to specify a peer to talk to initially.  When you specify a peer the
+server will attempt to contact that peer, and self organize itself with the
+chord ring that server is on.
+
+Initiatation of a server has the following actions: Contact the specified 
+peer and ask who my "Successor" is.  In Chord each node has a successor, and
+that successor has another successor.  This structure forms a cyclic graph
+of nodes.  Based on the number of bits in the consistent hashing scheme the
+graph at most can have m nodes, which is the number of bits in the hashing
+scheme.
+
+I will not be able to due the algorithm justice, and I urge you to read the
+full specification in the resources section.  I will say, that the goal
+is to provide a node to node mechanism for routing any given key using said
+hashing mechanism to a particular peer in the cluster.  This works perfectly
+for an even sharding distribution scheme, especially with a distributed file
+scheme.
+
+Here are the following operations that I have implemented:
+
+* Initialization
+* Stabiliation
+* Successor
+* ClosestPrecedingNode
+* FingerTable
+
+The initialization task, basically entails the server starting up, and trying
+to connect to the listed peer by getting the node's successor from the network.
+If the node is unable to connect to the network, it will accept all requests,
+as appropriate by the chord mechanism.  If there is already another node running
+in the ring, the node will ask the peer what the node's successor is, and on
+response, will attempt to SetPredecessor on the successor node, as well as set
+the seeking node's finger table to show that as being it's immediate successor.
+
+The stabiliation task runs every so often, in our case in a stand along
+goroutine from the main server entrypoint.  This task queries it's successor
+to see if it is still the appropriate predecessor for the successor.  Based on
+if the node is the rightful predecessor or not, it will re-set the successor's
+predecessor field.  If it is not appropriate, it will take the new predecessor's
+information and contact said predecessor, making itself the predecessor's predecessor.
+
+This stabiliation technique gives eventual location consistancy for keys the
+network is routing for.
+
+#### Confessions
+
+I must confess, I was unable to complete the chord implementatation at the
+due date of this milestone.  I have a strange bug where nodes are unable to
+self organize quite right.  In that I mean the ring doesn't actually form
+correctly, giving an uneven distribution of files to a few nodes in the
+cluster.
+
+I believe the problem lies in how I am handling the SetPredecessor functionality
+because the nodes that are unable to join the ring properly seem to be stuck
+fighting to join the ring, and the other nodes are not allowing them to insert
+themselves into the ring.
+
+#### The Client
+
+At this time I have developed a rather simple client, that when given a directory
+path, it will upload the contents of each file into the named peer, which was
+retrieved using the Successor RPC call on the chord peer.  The chord peer will
+route to the approprate (the best it can, being somewhat broken at the moment)
+node.  The client will then take this node information and speak directly to
+the server, transmitting the file.
+
+At this time there is a "getfile" functionality.  When the client is given a 
+file name which is stored in the peerstore, it will return and save that file
+at the choosing of the user.
+
+#### Sample Build
+
+To build, you run `make release` or if you want a particular result, you can specify
+such as `make linux`
+
+#### Sample Run
+
+Starting a peerstore server:
+
+```
+./release/peerstore_server-latest-linux-amd64 -initialPeerAddr :3000 -addr :3001 -dataPath .peerstore/3001
+```
+
+I would suggest if you run more than one to use a different -dataPath for each
+server running.  That will allow you to see the particular keys that are loaded
+into that server.  If you are starting the first server the initial peer addr
+is not that important.
+
+
+Starting the peerstore client:
+
+```
+./release/peerstore_client-latest-linux-amd64 -peerAddr :3001 -localPath ~/peerstore/ -operation backup
+```
+This will take everything from `~/peerstore/` directory, recursively, and load
+it into the server at peerAddr, which is port :3001 on localhost in this example
+
+```
+./release/peerstore_client-latest-linux-amd64 -filedest ~/test.txt.restored -peerAddr :3001 -filename ~/peerstore/test.txt -operation getfile
+```
+
+This command will restore the file from ~/peerstore/test.txt to the file called
+~/test.txt.restored
+
+#### Next Steps
+
+It was clear after this adventure, more time and energy needs to be spent on
+the peer to peer debugging and troubleshooting steps.  It is fairly obvious
+there are a lot of moving parts, and though the algorithm is fairly straight
+forward, there were a lot of gaps that need to be filled in an implementation.
 
 ### Dependencies
 
