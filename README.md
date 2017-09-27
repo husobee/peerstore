@@ -9,7 +9,9 @@ PeerStore is a peer to peer file storage and sharing product.
 ```bash
 
 mkdir -p ~/golang/src/github.com/husobee/
-tar -zxf /home/test/peerstore.tar.gz -C ~/golang/src/github.com/husobee/
+tar -zxf ~/peerstore.tar.gz -C ~/golang/src/github.com/husobee/
+cd ~/golang/src/github.com/husobee/
+
 GOPATH=~/golang/ go get -u ./...
 GOPATH=~/golang/ make linux # to just make the linux exe
 GOPATH=~/golang/ make release # will create a "releases/" dir and build windows/mac/linux binaries
