@@ -49,8 +49,10 @@ the project, and thus will be a living document.
 in the PeerStore network is holding any given resource.
 - *Chord* - [The algorithm](../chord_sigcomm.pdf) used to accomplish a DHT in
 the PeerStore network
-- *RPC* - Remote Proceedure Call, a function or method that can be called from a
+- *RPC* - Remote Procedure Call, a function or method that can be called from a
 peer in the network.
+- *Web of Trust* - A decentralized trust model where accumulation of keys happen
+through the trust of interactions.
 
 ### Structure of Milestone Documentation
 
@@ -59,10 +61,10 @@ the objectives are for that particular milestone.  Then there will be a sub
 section outlining the Use Cases, and Component Architecture.  A Discussion will
 then be outlined as a sub-section describing in great detail the specifications
 of the implementation developed.  This will then be followed by the dependencies
-that were used in the implementation, and why those dependancies were needed for
+that were used in the implementation, and why those dependencies were needed for
 the implementation.
 
-The final milestone sub-section will be an explaination of how to run and test
+The final milestone sub-section will be an explanation of how to run and test
 the implementation, which will prove the milestone objectives were
 accomplished.
 
@@ -73,13 +75,13 @@ A few key objectives in this milestone are as follows:
  * Client/Server peer to peer communications
  * OS I/O abstraction for reading/writing files to disk
  * Insertion of files in correct nodes for DHT
- * Lookups in DHT for nodes containing files looked for
+ * Look-ups in DHT for nodes containing files looked for
 
 ### Use Cases
 
 There are a number of use cases that can be split into two independent modules
 within the milestone.  These two are: the distributed hash table, used to find
-relevent files amoungst the peers; the file sharing implementation.
+relevant files amoungst the peers; the file sharing implementation.
 
 #### File Sharing Use Cases
 
@@ -115,8 +117,8 @@ accept queries as to whom the successor of a given key would be based on their
 information.  Each node has an understanding of who their successor is and each
 node asks the next if they know the successor of the key given.
 
-As realized this algorithm just described would be very ineffecient.  To speed
-up the lookups the Chord algorithm articulates the need for a finger table,
+As realized this algorithm just described would be very inefficient.  To speed
+up the look-ups the Chord algorithm articulates the need for a finger table,
 which contains a subset of all of it's successor nodes.  In this case the
 LocalNode will call successor locally to see if it's successor would be
 the successor of the key given, and if not finds the node in it's finger table
@@ -166,7 +168,7 @@ a server, it initiates connections to backend servers, and sends requests, and
 waits for responses from the server.
 
 It is pretty clear by now what the two secondary packages are for, Request and
-Response.  Request is the datastructure by which a request is formatted, and
+Response.  Request is the data structure by which a request is formatted, and
 ultimately packaged for transmission over the connection.  The Response is the
 structure for how the server will respond to any given request.
 
@@ -177,7 +179,7 @@ Principally, this package manages the Local Node's finger table, predecessor,
 and performs the search for successors of various keys.
 
 This package, much like the File package, manages the business logic required
-for the chord protocol to operate, including data structures that are imbedded
+for the chord protocol to operate, including data structures that are embedded
 in the request and response "Data" fields.
 
 ### Discussion (Specification)
@@ -185,7 +187,7 @@ in the request and response "Data" fields.
 At it's core, this is a service that will house copies of files.  That being the
 case, it was very important that we have a sold mechanism in place to handling
 file requests, be them upload or download or deletes.  To this end we created a
-request processing threadpool, where you are able to specify the number of
+request processing thread pool, where you are able to specify the number of
 workers and the amount of buffer those workers are allowed to have for queuing
 messages.
 
@@ -197,8 +199,8 @@ take that common response structure and wire serialize it.
 
 The serialization we are using for both request's and responses is the go
 built in serialization, called `gob` which is listed in the dependencies.  This
-allowed us to have an effecient wire protocol that seamlessly will turn into go
-specific datastructures.
+allowed us to have an efficient wire protocol that seamlessly will turn into go
+specific data structures.
 
 There is validation built into the request/response libraries, which include
 valid options for methods, and response types.
@@ -220,7 +222,7 @@ you need to specify a peer to talk to initially.  When you specify a peer the
 server will attempt to contact that peer, and self organize itself with the
 chord ring that server is on.
 
-Initiatation of a server has the following actions: Contact the specified 
+Initiation of a server has the following actions: Contact the specified 
 peer and ask who my "Successor" is.  In Chord each node has a successor, and
 that successor has another successor.  This structure forms a cyclic graph
 of nodes.  Based on the number of bits in the consistent hashing scheme the
@@ -237,7 +239,7 @@ scheme.
 Here are the following operations that I have implemented:
 
 * Initialization
-* Stabiliation
+* Stabilization
 * Successor
 * ClosestPrecedingNode
 * FingerTable
@@ -250,19 +252,19 @@ in the ring, the node will ask the peer what the node's successor is, and on
 response, will attempt to SetPredecessor on the successor node, as well as set
 the seeking node's finger table to show that as being it's immediate successor.
 
-The stabiliation task runs every so often, in our case in a stand along
+The stabilization task runs every so often, in our case in a stand along
 goroutine from the main server entrypoint.  This task queries it's successor
 to see if it is still the appropriate predecessor for the successor.  Based on
 if the node is the rightful predecessor or not, it will re-set the successor's
 predecessor field.  If it is not appropriate, it will take the new predecessor's
 information and contact said predecessor, making itself the predecessor's predecessor.
 
-This stabiliation technique gives eventual location consistancy for keys the
+This stabilization technique gives eventual location consistency for keys the
 network is routing for.
 
 #### Confessions
 
-I must confess, I was unable to complete the chord implementatation at the
+I must confess, I was unable to complete the chord implementation at the
 due date of this milestone.  I have a strange bug where nodes are unable to
 self organize quite right.  In that I mean the ring doesn't actually form
 correctly, giving an uneven distribution of files to a few nodes in the
@@ -278,12 +280,12 @@ themselves into the ring.
 At this time I have developed a rather simple client, that when given a directory
 path, it will upload the contents of each file into the named peer, which was
 retrieved using the Successor RPC call on the chord peer.  The chord peer will
-route to the approprate (the best it can, being somewhat broken at the moment)
+route to the appropriate (the best it can, being somewhat broken at the moment)
 node.  The client will then take this node information and speak directly to
 the server, transmitting the file.
 
 At this time there is a "getfile" functionality.  When the client is given a 
-file name which is stored in the peerstore, it will return and save that file
+file name which is stored in the PeerStore, it will return and save that file
 at the choosing of the user.
 
 #### Sample Build
@@ -293,7 +295,7 @@ such as `make linux`
 
 #### Sample Run
 
-Starting a peerstore server:
+Starting a PeerStore server:
 
 ```
 ./release/peerstore_server-latest-linux-amd64 -initialPeerAddr :3000 -addr :3001 -dataPath .peerstore/3001
@@ -367,5 +369,207 @@ standard library dependencies and version pin them to a working version.
 ### Resources
 
  - [The Chord Algorithm](../chord_sigcomm.pdf)
+ - [Golang Documentation](https://golang.org/doc/)
+
+
+## Milestone 2 - Multiple users, authentication, and transport encryption
+
+A few key objectives in this milestone are as follows:
+
+* Authentication of peers
+* Authentication of users to access files
+* Encryption of connections between peers and users
+
+
+### Use Cases
+
+There are three distinct use cases we can derive from the objectives above.
+These three are: authentication of peer communications; authentication of users
+who wish to access files across peers; and the encryption of the transport
+between users and nodes, as well as nodes to nodes.
+
+
+#### Authentication of Peers
+
+In order to have authentication, a peer needs to inform other peers of it's
+existence as well as some mechanism to prove in future interactions that the
+user is who they say.  In order to achieve this feat we will be adding a node
+"Registration" operation, which will take a public key, and the node's
+identifier through an RPC call.
+
+The node by which the new node is registering will then take this public key and
+perform a "Store Registration" operation which will merely store the public key
+to the DHT with the Key of the node that is attempting to register.
+
+This will allow us to store the public key of the new node in the DHT for other
+nodes and users to access.
+
+Below is the high level use case diagram outlining the particulars of the peer
+registration process by which peers store their public key's within the DHT.
+
+![Peer Registration Use Case](./Milestone2/NodeRegistrationUseCaseDiagram.png)
+
+As you can see the registration process is at it's simplest the generation of
+key pairs, and the storage of said key pairs in the DHT.  This will allow other
+nodes and users the ability to find the node's public key in order to validate
+signatures for proving authenticity as well as encrypting traffic to particular
+nodes for communications.
+
+You may also note that all peer to peer communications, other than registration,
+have now been updated to include a "from" id and a "signature" field in the
+message header.  This will allow peers to know from whom the message is coming,
+as well as an RSA signature the peer will be able to validate before processing
+of the request.
+
+#### Authentication of Users
+
+In order to have authentication, a user needs to inform the peers in the DHT of
+it's existence, as well as a mechanism to prove in future interaction that the
+user is who they say.  As we can reuse the node to node registration quite
+easily, and merely apply it to the Users of the DHT we are going to follow the
+same conventions for authentication of users.
+
+Below is the high level use case diagram outlining the particulars of the user
+registration process, by which users can store their public Key's within the
+DHT:
+
+![User Registration Use Case](./Milestone2/UserRegistrationUseCaseDiagram.png)
+
+Since we are following the same registration convention exactly that new nodes
+use for registration, we are able to benefit from re-use.  We are storing user's
+public keys in the DHT the same way we store the node's public keys.
+
+We are also re-using the same "from" id and "signature" field in the message
+header for all requests, in order to identify and authenticate users.
+
+In order to preserve authentication to users we are also adding a "header"
+section to the stored files, which will include the user's public key identifier
+which is used to validate ownership of the file to the user.
+
+When a user request is made to take action upon a file, the user identifier in
+the action request is compared to the file "header" to make sure the user
+identifier matches the request.  Moreover the signature of the request is
+validated against the public key which is stored in the DHT for that given
+user identifier.
+
+If the user identifier matches, and the signature is validated by the public key
+which is stored in the DHT, then the user is thereby authorized to take action
+on that file.
+
+With the small changes to the files stored in the data directory in each node
+within the DHT we are able to confirm ownership of a particular file at 
+request time, allowing the node to accept or deny the operation.
+
+
+#### Encryption of Communications
+
+Since we are already distributing and using key pairs for validation of
+ownership and authentication of messages, we will continue to use them for
+encryption of session keys for session communications.
+
+For encryption of communications we will be using AES in CBC mode.  Every
+message that gets sent from either a peer or a user will be "wrapped"
+in a new encrypted message type which will consist of the following attributes:
+
+1. Session Key
+    * this will be the encrypted (with public key cryptography) session key to
+    unlock the session stream
+2. Initialization Vector
+    * this will be the AES initialization vector used in CBC mode.
+3. Ciphertext
+    * this will be the encrypted version of the peerstore protocol message
+
+Below is the high level use case diagram outlining the particulars of the
+transport encryption process:
+
+![Transport Encryption Use Case](./Milestone2/TransportEncryptionUseCaseDiagram.png)
+
+
+### Component Architectures
+
+The components created in this milestone are outlined below:
+
+![Milestone 2 Component Diagram](./Milestone2/ComponentDiagram.png)
+
+As seen by the above diagram, there are three primary packages within this
+design:  Crypto, File, Protocol.
+
+#### Changes to File Package
+
+The file package was defined in Milestone 1 and has been slightly altered.  It
+has been altered to allow for a new "header field" within the file.  The first
+twenty bytes of all files stored in DHT nodes is now the identifier of the user.
+
+We will use this to validate authenticity of users for the given file they are
+attempting to access.  All other functionality of the file package is to remain
+the same.
+
+
+#### Protocol Package
+
+The protocol package was defined in Milestone 1 and has been slightly altered.
+It has been changed to include an "Encrypted Transport" message type which
+contains a "Hash" field, "Session Key" field, a "Initialization Vector" field,
+as well as an "Ciphertext" field.  This message type is meant to encapsulate the
+existing protocol base message type.
+
+The protocol package now requires the "Crypto" package in order to perform
+encryption/decryption, signature validation and session key decryption.
+
+The new server flow is now as follows:
+1. Using public key crypto, decrypt the Session Key with server's private key
+2. Using the Initialization Vector, and decrypted Session Key, decrypt Ciphertext
+3. Validate the payload of the Plaintext by performing a hash on the decrypted
+Ciphertext and comparing to the Hash field
+4. Attempt to decode the peer protocol message and process as plaintext
+
+With this small processing pipeline change, we are able to secure the existing
+message protocol with minimal changes, using the web of trust the DHT has built.
+
+### Discussion (Specification)
+
+#### Sample Build
+
+To build, you run `make release` or if you want a particular result, you can specify
+such as `make linux`
+
+#### Running Notes
+
+Starting a peerstore server:
+
+Starting the peerstore server the first time will generate a keypair on startup
+during the registration process.  If there is already a keypair in the -dataPath
+specified directory that keypair will be used.  These keypairs are how the
+session key is decrypted in order to accept any communications as well as how
+messages are signed by the peer.
+
+Starting the peerstore client:
+
+It is important to understand that running the peerstore client will attempt to
+create a `.peerstore-client` directory within the home directory of the user
+who is attempting to run the client.  Within this location is where the user
+public and private keys are stored for use by the client in registration.
+
+### Dependencies
+
+The dependencies used for this project are as follows, followed by a brief
+explanation as to why, and how the help.
+
+- [crypto/rsa/](https://golang.org/pkg/crypto/rsa/)
+    - This is the golang RSA crypto package.  We are using RSA for it's
+    public/private key cryptographic operations, including encryption,
+    decryption, and digital signatures as well as validation of signatures.
+    - We are also using this package to generate our key pairs
+- [crypto/aes](https://golang.org/pkg/crypto/aes/)
+    - This is the golang AES crypto package.  We are using AES for it's
+    strong encryption and decryption capabililties for transport security.
+
+For dependency management we are using the golang tool `dep` which has stores a
+manifest in the repository "GoPkg.toml" which will keep track of all the non
+standard library dependencies and version pin them to a working version.
+
+
+### Resources
+
  - [Golang Documentation](https://golang.org/doc/)
 

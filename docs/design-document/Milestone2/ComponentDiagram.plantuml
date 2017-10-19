@@ -1,0 +1,37 @@
+@startuml
+
+
+
+package "Protocol" {
+    [Server]
+    [Transport]
+    [Encrypted Message]
+    [Request]
+    [Response]
+}
+
+[Models]
+
+
+[Transport]..>[Encrypted Message]:uses
+[Encrypted Message]..>[Request]:uses
+[Encrypted Message]..>[Response]:uses
+[Server]..>[Request]:uses
+[Server]..>[Response]:uses
+
+[Request]<..[Models]:extends
+[Response]<..[Models]:extends
+
+[Remote Node] <..[Transport]:extends
+[Local Node] <..[Server]:extends
+
+package "Crypto" {
+    [asymetric]
+    [symetric]
+}
+
+[Encrypted Message]..>[asymetric]:uses
+[Encrypted Message]..>[symetric]:uses
+
+
+@enduml

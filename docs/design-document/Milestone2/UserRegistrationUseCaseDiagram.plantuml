@@ -1,0 +1,20 @@
+@startuml
+
+
+User -> (generate registration request)
+(generate registration request)<..(generate keypair):extends
+(generate registration request)<..(hash public key as ID) :extends
+
+User ->(Register)
+(Register)->Server:rpc
+
+Server -> (Store Registration)
+(Store Registration) <.. (Save Public Key to DHT) 
+
+note left of Register
+  User sends the server connected to within the DHT
+  the User's public key and hash of the public key
+  for storage in the DHT for others to lookup
+end note
+
+@enduml

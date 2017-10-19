@@ -1,0 +1,14 @@
+@startuml
+
+
+
+User -> (Perform Get File)
+
+(Perform Get File) <.. (Lookup Public Key for Node in DHT):extends
+(Perform Get File) <.. (Create Session Key):extends
+(Create Session Key) <..(Generate Random Session Key):extends
+(Create Session Key) <..(Encrypt Random Session Key with Node's Public Key): extends
+(Perform Get File)<..(Encrypt with AES using Session Key PeerProtocol Message)
+(Perform Get File) <...(Send Encrypted Message to Node)
+
+@enduml
