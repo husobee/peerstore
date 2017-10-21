@@ -1,9 +1,11 @@
 package main
 
 import (
+	"crypto/rsa"
 	"crypto/sha1"
 	"encoding/hex"
 	"flag"
+	"fmt"
 	"os"
 	"os/signal"
 	"runtime"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/husobee/peerstore/chord"
+	"github.com/husobee/peerstore/crypto"
 	"github.com/husobee/peerstore/file"
 	"github.com/husobee/peerstore/models"
 	"github.com/husobee/peerstore/protocol"
@@ -24,6 +27,8 @@ var (
 	addr string
 	// initialPeerAddr - the address for a known peer on the network
 	initialPeerAddr string
+	// initialPeerKeyFile - the key file location for a known peer on the network
+	initialPeerKeyFile string
 	// dataPath - the path where the data should be stored
 	dataPath string
 	// requestQueueBuffer - the number of requests to buffer in the server
@@ -40,6 +45,9 @@ func init() {
 	flag.StringVar(
 		&initialPeerAddr, "initialPeerAddr", "",
 		"the address of a known peer on the network")
+	flag.StringVar(
+		&initialPeerKeyFile, "initialPeerKeyFile", "",
+		"the key file location of a known peer on the network")
 	flag.StringVar(
 		&dataPath, "dataPath", "./.peerstore",
 		"the data location for the server to store files")
@@ -104,11 +112,78 @@ func main() {
 		}
 	}()
 
+	var (
+		peerNode models.Node
+		key      *rsa.PrivateKey
+		err      error
+	)
+
+	privateKeyFile, err := os.Open(
+		fmt.Sprintf("%s/privatekey.pem", dataPath))
+
+	if err != nil {
+		// generate our public key
+		key, err = crypto.GenerateKeyPair()
+		if err != nil {
+			glog.Infof("failed to generate keypair: %s", err)
+			return
+		}
+		// create our keypair file:
+		privateKeyFile, err := os.Create(
+			fmt.Sprintf("%s/privatekey.pem", dataPath))
+		if err != nil {
+			glog.Infof("failed to create keypair file: %s", err)
+			return
+		}
+		crypto.WritePrivateKeyAsPem(privateKeyFile, key)
+		privateKeyFile.Close()
+
+		publicKeyFile, err := os.Create(
+			fmt.Sprintf("%s/publickey.pem", dataPath))
+		if err != nil {
+			glog.Infof("failed to create keypair file: %s", err)
+			return
+		}
+		crypto.WritePublicKeyAsPem(publicKeyFile, key.Public().(*rsa.PublicKey))
+		publicKeyFile.Close()
+	} else {
+		key, err = crypto.ReadKeypairAsPem(privateKeyFile)
+		if err != nil {
+			glog.Infof("failed to read keypair: %s", err)
+			return
+		}
+	}
+
+	// if no peer is specified, we are the only one, so dont read a peer
+	if initialPeerKeyFile != "" {
+		// read in our peer's public key
+		keyFile, err := os.Open(initialPeerKeyFile) // For read access.
+		if err != nil {
+			glog.Infof("failed to read initial peer key file: %s", err)
+			return
+		}
+
+		peerKey, err := crypto.ReadPublicKeyAsPem(keyFile)
+		if err != nil {
+
+		}
+
+		peerNode = models.Node{
+			Addr:      initialPeerAddr,
+			PublicKey: &peerKey,
+			ID:        sha1.Sum([]byte(addr)),
+		}
+	}
+
+	// create a server to listen on
+	server, err := protocol.NewServer(
+		key, peerNode, addr, dataPath, requestQueueBuffer, requestNumWorkers)
+	if err != nil {
+		glog.Fatalf("Failed to create new server: %v", err)
+	}
+
 	// create our local chord node.
-	localNode, err := chord.NewLocalNode(addr, models.Node{
-		Addr: initialPeerAddr,
-		ID:   sha1.Sum([]byte(addr)),
-	})
+	localNode, err := chord.NewLocalNode(server, addr, peerNode)
 
 	glog.Infof("!!! local node: addr=%s, id=%s\n",
 		localNode.Addr,
@@ -132,13 +207,6 @@ func main() {
 		}
 	}()
 
-	// create a server to listen on
-	server, err := protocol.NewServer(
-		addr, dataPath, requestQueueBuffer, requestNumWorkers)
-	if err != nil {
-		glog.Fatalf("Failed to create new server: %v", err)
-	}
-
 	glog.Infof("Starting server - %s, %s, %d, %d",
 		addr, dataPath, requestQueueBuffer, requestNumWorkers)
 
@@ -151,6 +219,11 @@ func main() {
 	server.Handle(protocol.SetPredecessorMethod, localNode.SetPredecessorHandler)
 	server.Handle(protocol.GetPredecessorMethod, localNode.GetPredecessorHandler)
 	server.Handle(protocol.GetFingerTableMethod, localNode.FingerTableHandler)
+	// registration route
+	server.Handle(protocol.UserRegistrationMethod, localNode.UserRegistrationHandler)
+	// node registration route
+	server.Handle(protocol.NodeRegistrationMethod, server.NodeRegistrationHandler)
+	server.Handle(protocol.NodeTrustMethod, server.NodeTrustHandler)
 
 	go func() {
 		for {

@@ -16,13 +16,16 @@ type RequestMethod uint64
 
 // RequestMethodToString - Convert from a Request Method to String
 var RequestMethodToString = map[RequestMethod]string{
-	GetFileMethod:        "GetFile",
-	PostFileMethod:       "PostFile",
-	DeleteFileMethod:     "DeleteFile",
-	GetSuccessorMethod:   "GetSuccessor",
-	SetPredecessorMethod: "SetPredecessor",
-	GetPredecessorMethod: "GetPredecessor",
-	GetFingerTableMethod: "GetFingerTable",
+	GetFileMethod:          "GetFile",
+	PostFileMethod:         "PostFile",
+	DeleteFileMethod:       "DeleteFile",
+	GetSuccessorMethod:     "GetSuccessor",
+	SetPredecessorMethod:   "SetPredecessor",
+	GetPredecessorMethod:   "GetPredecessor",
+	GetFingerTableMethod:   "GetFingerTable",
+	UserRegistrationMethod: "UserRegistrationMethod",
+	NodeRegistrationMethod: "NodeRegistrationMethod",
+	NodeTrustMethod:        "NodeTrustMethod",
 }
 
 const (
@@ -40,6 +43,12 @@ const (
 	GetPredecessorMethod
 	// GetFingerTableMethod - Chord Method to get the finger table
 	GetFingerTableMethod
+	// UserRegistrationMethod - user registration methos
+	UserRegistrationMethod
+	// NodeRegistrationMethod - user registration methos
+	NodeRegistrationMethod
+	// NodeTrustMethod - user registration methos
+	NodeTrustMethod
 )
 
 // Request - the standard request, includes a header,

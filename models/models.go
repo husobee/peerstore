@@ -1,6 +1,7 @@
 package models
 
 import (
+	"crypto/rsa"
 	"encoding/gob"
 	"encoding/hex"
 	"fmt"
@@ -31,8 +32,9 @@ type Identifier [20]byte
 
 // Node - This is a peer node representation
 type Node struct {
-	ID   Identifier
-	Addr string
+	ID        Identifier
+	Addr      string
+	PublicKey *rsa.PublicKey
 }
 
 // Compare - Given a Node, compare the parameter nPrime with this

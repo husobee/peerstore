@@ -2,12 +2,15 @@ package chord
 
 import (
 	"bytes"
+	"context"
+	"crypto/rsa"
 	"crypto/sha1"
 	"encoding/hex"
 	"sync"
 
 	"github.com/golang/glog"
 	"github.com/husobee/peerstore/models"
+	"github.com/husobee/peerstore/protocol"
 	"github.com/pkg/errors"
 )
 
@@ -20,10 +23,11 @@ type LocalNode struct {
 
 	predecessor      models.Node
 	predecessorMutex *sync.RWMutex
+	server           *protocol.Server
 }
 
 // NewLocalNode - Creation of the new local node
-func NewLocalNode(addr string, peer models.Node) (*LocalNode, error) {
+func NewLocalNode(s *protocol.Server, addr string, peer models.Node) (*LocalNode, error) {
 	// make a new finger table for this node
 	n := models.Node{
 		Addr: addr,
@@ -32,25 +36,40 @@ func NewLocalNode(addr string, peer models.Node) (*LocalNode, error) {
 		),
 	}
 
-	var fingerTable = models.NewFingerTable()
+	var (
+		fingerTable = models.NewFingerTable()
+		err         error
+	)
 	// set initial finger table to have self for the whole range
-	ln := &LocalNode{&n, fingerTable, models.Node{}, new(sync.RWMutex)}
+	ln := &LocalNode{
+		&n, fingerTable, models.Node{}, new(sync.RWMutex), s,
+	}
 	fingerTable.SetIth(1, models.NewInterval(n, n), n, ln.ToNode())
 	glog.Infof("bootstrapping fingertable: %s", fingerTable.ToString())
 	// create a new local node
 
-	// run the initialization process
-	err := ln.Initialize(peer)
+	if &peer != nil {
+		// run the initialization process
+		err = ln.Initialize(peer)
+	}
 	return ln, err
+}
+
+// UserRegistrationHandler - this handler handles all user registrations.  A user
+// registration consists of the user giving the server it's public key, and the
+// server signing that key and placing it within the DHT
+func (ln *LocalNode) UserRegistrationHandler(ctx context.Context, r *protocol.Request) protocol.Response {
+	// store the user's public key in the DHT
+	return protocol.Response{}
 }
 
 // ToNode - Convert LocalNode to just a plain Node
 func (ln LocalNode) ToNode() models.Node {
-	n := models.Node{
-		Addr: ln.Addr,
-		ID:   ln.ID,
+	return models.Node{
+		Addr:      ln.Addr,
+		ID:        ln.ID,
+		PublicKey: ln.server.PrivateKey.Public().(*rsa.PublicKey),
 	}
-	return n
 }
 
 // Stabilize - stabilize the chord ring, makes sure we are actually predecessor
@@ -76,13 +95,14 @@ func (ln *LocalNode) Stabilize() error {
 			// if the first entry in finger is ourself, then we dont have a successor
 			predecessor := newPredecessor
 			for {
-				predecessorRN, err := NewRemoteNode(predecessor.Addr)
+				// lookup the public key for the predecessor
+				predecessorRN, err := NewRemoteNode(predecessor.Addr, predecessor.PublicKey)
 				if err != nil {
 					glog.Infof("error creating new remote node for predecessor: %v\n", err)
 					break
 				}
 
-				nextPredecessor, err := predecessorRN.GetPredecessor()
+				nextPredecessor, err := predecessorRN.GetPredecessor(ln.server.PrivateKey)
 				if err != nil {
 					glog.Infof("error getting new predecessor on remote node: %v\n", err)
 					break
@@ -91,12 +111,12 @@ func (ln *LocalNode) Stabilize() error {
 				if nextPredecessor.Addr == "" {
 					// predecessor was our last one in the chain
 					ln.SetSuccessor(predecessor)
-					newPredecessorRN, err := NewRemoteNode(predecessor.Addr)
+					newPredecessorRN, err := NewRemoteNode(predecessor.Addr, predecessor.PublicKey)
 					if err != nil {
 						glog.Infof("error creating new remote node for predecessor: %v\n", err)
 						break
 					}
-					newPredecessorRN.SetPredecessor(ln.ToNode())
+					newPredecessorRN.SetPredecessor(ln.ToNode(), ln.server.PrivateKey)
 					break
 				}
 				predecessor = nextPredecessor
@@ -104,13 +124,13 @@ func (ln *LocalNode) Stabilize() error {
 		}
 	} else {
 
-		successorRN, err := NewRemoteNode(currentSuccessor.Addr)
+		successorRN, err := NewRemoteNode(currentSuccessor.Addr, currentSuccessor.PublicKey)
 		if err != nil {
 			glog.Infof("error creating new remote node for successor: %v\n", err)
 			return errors.Wrap(err, "error creating new remote node for successor: ")
 		}
 
-		currentSuccessorPredecessor, err := successorRN.GetPredecessor()
+		currentSuccessorPredecessor, err := successorRN.GetPredecessor(ln.server.PrivateKey)
 		glog.Infof("stabilize for id=%s, successor id=%s thinks id=%s is predecessor\n",
 			hex.EncodeToString(ln.ID[:]),
 			hex.EncodeToString(currentSuccessor.ID[:]),
@@ -138,7 +158,7 @@ func (ln *LocalNode) Stabilize() error {
 		if succPredID < succID {
 			if succPredID < lnID && lnID < succID {
 				// change the successor to use ln as predecessor
-				successorRN, err = NewRemoteNode(currentSuccessor.Addr)
+				successorRN, err = NewRemoteNode(currentSuccessor.Addr, currentSuccessor.PublicKey)
 				if err != nil {
 					glog.Infof("error creating new remote node for successor: %v\n", err)
 					errors.Wrap(err, "error creating new remote node for successor: ")
@@ -146,7 +166,7 @@ func (ln *LocalNode) Stabilize() error {
 				glog.Info("!!! succPredID < lnID -> CORRECTING HERE")
 				if err := successorRN.SetPredecessor(models.Node{
 					Addr: ln.Addr, ID: ln.ID,
-				}); err != nil {
+				}, ln.server.PrivateKey); err != nil {
 					glog.Infof("error resetting successor's predecessor to self", err)
 					return errors.Wrap(err, "error setting new successor's predecessor to self: ")
 				}
@@ -168,7 +188,7 @@ func (ln *LocalNode) Stabilize() error {
 					hex.EncodeToString(currentSuccessorPredecessor.ID[:]),
 				)
 
-				newSuccessorRN, err := NewRemoteNode(currentSuccessorPredecessor.Addr)
+				newSuccessorRN, err := NewRemoteNode(currentSuccessorPredecessor.Addr, currentSuccessorPredecessor.PublicKey)
 				if err != nil {
 					glog.Infof("error creating new remote node for new successor: %v\n", err)
 					return errors.Wrap(err, "error creating new remote node for new  successor: ")
@@ -177,7 +197,7 @@ func (ln *LocalNode) Stabilize() error {
 				// set the new successor's predecessor to ourselves
 				if err := newSuccessorRN.SetPredecessor(models.Node{
 					Addr: ln.Addr, ID: ln.ID,
-				}); err != nil {
+				}, ln.server.PrivateKey); err != nil {
 					glog.Infof("error setting new successor's predecessor to self", err)
 					return errors.Wrap(err, "error setting new successor's predecessor to self: ")
 				}
@@ -202,7 +222,7 @@ func (ln *LocalNode) Stabilize() error {
 					hex.EncodeToString(currentSuccessorPredecessor.ID[:]),
 				)
 
-				newSuccessorRN, err := NewRemoteNode(currentSuccessorPredecessor.Addr)
+				newSuccessorRN, err := NewRemoteNode(currentSuccessorPredecessor.Addr, currentSuccessorPredecessor.PublicKey)
 				if err != nil {
 					glog.Infof("error creating new remote node for new successor: %v\n", err)
 					return errors.Wrap(err, "error creating new remote node for new  successor: ")
@@ -211,7 +231,7 @@ func (ln *LocalNode) Stabilize() error {
 				// set the new successor's predecessor to ourselves
 				if err := newSuccessorRN.SetPredecessor(models.Node{
 					Addr: ln.Addr, ID: ln.ID,
-				}); err != nil {
+				}, ln.server.PrivateKey); err != nil {
 					glog.Infof("error setting new successor's predecessor to self", err)
 					return errors.Wrap(err, "error setting new successor's predecessor to self: ")
 				}
@@ -221,7 +241,7 @@ func (ln *LocalNode) Stabilize() error {
 
 			} else {
 				// change the successor to use ln as predecessor
-				successorRN, err = NewRemoteNode(currentSuccessor.Addr)
+				successorRN, err = NewRemoteNode(currentSuccessor.Addr, currentSuccessor.PublicKey)
 				if err != nil {
 					glog.Infof("error creating new remote node for successor: %v\n", err)
 					return errors.Wrap(err, "error creating new remote node for successor: ")
@@ -232,7 +252,7 @@ func (ln *LocalNode) Stabilize() error {
 				)
 				if err := successorRN.SetPredecessor(models.Node{
 					Addr: ln.Addr, ID: ln.ID,
-				}); err != nil {
+				}, ln.server.PrivateKey); err != nil {
 					glog.Infof("error resetting successor's predecessor to self", err)
 					return errors.Wrap(err, "error setting new successor's predecessor to self: ")
 				}
@@ -267,7 +287,7 @@ func (ln *LocalNode) Initialize(peer models.Node) error {
 
 	glog.Infof("initializing chord node against remote: %s\n", peer.ToString())
 
-	rn, err := NewRemoteNode(peer.Addr)
+	rn, err := NewRemoteNode(peer.Addr, peer.PublicKey)
 	if err != nil {
 		glog.Infof("failed initializing chord node against remote: %v\n", err)
 		return errors.New(
@@ -275,7 +295,7 @@ func (ln *LocalNode) Initialize(peer models.Node) error {
 	}
 
 	// call successor on remote node with our ID to figure out our successor
-	successor, err := rn.Successor(ln.ID)
+	successor, err := rn.Successor(ln.ID, ln.server.PrivateKey)
 
 	if err != nil {
 		glog.Infof("failed initializing chord node against remote: %v\n", err)
@@ -290,14 +310,14 @@ func (ln *LocalNode) Initialize(peer models.Node) error {
 	glog.Infof("finger table updated: %s\n", ln.fingerTable.ToString())
 
 	// set the successor's new predecessor
-	successorRN, err := NewRemoteNode(successor.Addr)
+	successorRN, err := NewRemoteNode(successor.Addr, successor.PublicKey)
 	if err != nil {
 		glog.Infof("error creating new remote node for successor: %v\n", err)
 		errors.Wrap(err, "error creating new remote node for successor: ")
 	}
 
 	glog.Infof("!!! should only initialize once")
-	if err := successorRN.SetPredecessor(models.Node{Addr: ln.Addr, ID: ln.ID}); err != nil {
+	if err := successorRN.SetPredecessor(models.Node{Addr: ln.Addr, ID: ln.ID}, ln.server.PrivateKey); err != nil {
 		glog.Infof("error setting new predecessor on remote node: %v\n", err)
 		errors.Wrap(err, "error setting new predecessor on remote node:")
 	}
@@ -359,13 +379,13 @@ func (ln *LocalNode) Successor(id models.Identifier) (models.Node, error) {
 	}
 
 	// call whoever we think is closest
-	rn, err := NewRemoteNode(nPrime.Addr)
+	rn, err := NewRemoteNode(nPrime.Addr, nPrime.PublicKey)
 	if err != nil {
 		return models.Node{}, errors.Wrap(err, "failure creating new remote node: ")
 	}
 
 	glog.Infof("contacting node: %s\n", nPrime.ToString())
-	node, err := rn.Successor(id)
+	node, err := rn.Successor(id, ln.server.PrivateKey)
 	if err != nil {
 		return models.Node{}, errors.Wrap(err, "failure getting successor from remote node: ")
 	}

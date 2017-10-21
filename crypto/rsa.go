@@ -49,8 +49,7 @@ func EncryptRSA(key *rsa.PublicKey, plaintext []byte) ([]byte, error) {
 
 // DecryptRSA - Decrypt using RSA Private Key
 func DecryptRSA(key *rsa.PrivateKey, ciphertext []byte) ([]byte, error) {
-	var session = []byte{}
-	err := rsa.DecryptPKCS1v15SessionKey(rand.Reader, key, ciphertext, session)
+	session, err := rsa.DecryptPKCS1v15(rand.Reader, key, ciphertext)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to decrypt ciphertext: ")
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/rsa"
 	"crypto/sha1"
 	"encoding/gob"
 	"flag"
@@ -11,18 +12,22 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/golang/glog"
 	"github.com/husobee/peerstore/chord"
+	"github.com/husobee/peerstore/crypto"
 	"github.com/husobee/peerstore/models"
 	"github.com/husobee/peerstore/protocol"
 	"github.com/pkg/errors"
 )
 
 var (
-	peerAddr  string
-	localPath string
-	operation string
-	filename  string
-	filedest  string
+	peerAddr string
+	// peerKeyFile - the key file location for a known peer on the network
+	peerKeyFile string
+	localPath   string
+	operation   string
+	filename    string
+	filedest    string
 )
 
 func init() {
@@ -41,6 +46,9 @@ func init() {
 	flag.StringVar(
 		&filedest, "filedest", "",
 		"destination of the file with doing getfile operation")
+	flag.StringVar(
+		&peerKeyFile, "peerKeyFile", "",
+		"the key file location of a known peer on the network")
 	flag.Parse()
 }
 
@@ -81,6 +89,28 @@ func main() {
 		log.Fatalf("could not validate params: %v\n", err)
 	}
 
+	// generate our public key
+	privateKey, err := crypto.GenerateKeyPair()
+	if err != nil {
+		glog.Infof("failed to generate keypair: %s", err)
+		return
+	}
+	kb, _ := crypto.GobEncodePublicKey(privateKey.Public().(*rsa.PublicKey))
+	id := models.Identifier(sha1.Sum(kb))
+
+	// read in our peer's public key
+	keyFile, err := os.Open(peerKeyFile) // For read access.
+	if err != nil {
+		glog.Infof("failed to read initial peer key file: %s", err)
+		return
+	}
+
+	peerKey, err := crypto.ReadPublicKeyAsPem(keyFile)
+	if err != nil {
+		glog.Infof("failed to read keypair file: %s", err)
+		return
+	}
+
 	switch operation {
 	case "backup":
 		var walkFn = func(path string, fi os.FileInfo, err error) error {
@@ -92,7 +122,7 @@ func main() {
 				data, err := ioutil.ReadFile(path) // path is the path to the file.
 
 				// figure out where to connect to
-				st, err := protocol.NewTransport("tcp", peerAddr)
+				st, err := protocol.NewTransport("tcp", peerAddr, protocol.UserType, id, &peerKey, privateKey)
 				if err != nil {
 					log.Printf("ERR: %v", err)
 				}
@@ -104,9 +134,6 @@ func main() {
 					models.Identifier(key),
 				})
 				resp, err := st.RoundTrip(&protocol.Request{
-					Header: protocol.Header{
-						Key: key,
-					},
 					Method: protocol.GetSuccessorMethod,
 					Data:   idBuf.Bytes(),
 				})
@@ -126,7 +153,7 @@ func main() {
 				}
 
 				// figure out where to connect to
-				t, err := protocol.NewTransport("tcp", node.Addr)
+				t, err := protocol.NewTransport("tcp", peerAddr, protocol.UserType, id, node.PublicKey, privateKey)
 				if err != nil {
 					log.Printf("ERR: %v", err)
 				}
@@ -163,7 +190,7 @@ func main() {
 		key := sha1.Sum([]byte(filename))
 
 		// figure out where to connect to
-		st, err := protocol.NewTransport("tcp", peerAddr)
+		st, err := protocol.NewTransport("tcp", peerAddr, protocol.UserType, id, &peerKey, privateKey)
 		if err != nil {
 			log.Printf("ERR: %v", err)
 		}
@@ -197,7 +224,7 @@ func main() {
 		}
 
 		// figure out where to connect to
-		t, err := protocol.NewTransport("tcp", node.Addr)
+		t, err := protocol.NewTransport("tcp", peerAddr, protocol.UserType, id, node.PublicKey, privateKey)
 		if err != nil {
 			log.Printf("ERR: %v", err)
 		}

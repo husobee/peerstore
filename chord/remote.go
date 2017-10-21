@@ -2,6 +2,7 @@ package chord
 
 import (
 	"bytes"
+	"crypto/rsa"
 	"crypto/sha1"
 	"encoding/gob"
 
@@ -21,10 +22,11 @@ type RemoteNode struct {
 
 // NewRemoteNode - create a new remote node, which implements ChordNode, wherein
 // we are able to perform queries on this node
-func NewRemoteNode(addr string) (*RemoteNode, error) {
+func NewRemoteNode(addr string, key *rsa.PublicKey) (*RemoteNode, error) {
 	return &RemoteNode{
 		&models.Node{
-			Addr: addr,
+			Addr:      addr,
+			PublicKey: key,
 			ID: models.Identifier(
 				sha1.Sum([]byte(addr)),
 			),
@@ -34,16 +36,17 @@ func NewRemoteNode(addr string) (*RemoteNode, error) {
 }
 
 // GetPredecessor - Get the predecessor of a remote node
-func (rn *RemoteNode) GetPredecessor() (models.Node, error) {
+func (rn *RemoteNode) GetPredecessor(key *rsa.PrivateKey) (models.Node, error) {
 	// if connection is nil, create a new connection to the remote node
 	if rn.transport == nil {
 		var err error
-		if rn.transport, err = protocol.NewTransport("tcp", rn.Addr); err != nil {
+		if rn.transport, err = protocol.NewTransport("tcp", rn.Addr, protocol.NodeType, rn.ID, rn.PublicKey, key); err != nil {
 			// we had an error setting up our connection
 			return models.Node{}, errors.Wrap(err, "failed creating transport: ")
 		}
 	}
 	// send request to the remote
+	// TODO: encryption is done in the round tripper.
 	resp, err := rn.transport.RoundTrip(&protocol.Request{
 		Method: protocol.GetPredecessorMethod,
 	})
@@ -68,11 +71,11 @@ func (rn *RemoteNode) GetPredecessor() (models.Node, error) {
 }
 
 // Successor - Call successor on
-func (rn *RemoteNode) Successor(id models.Identifier) (models.Node, error) {
+func (rn *RemoteNode) Successor(id models.Identifier, key *rsa.PrivateKey) (models.Node, error) {
 	// if connection is nil, create a new connection to the remote node
 	if rn.transport == nil {
 		var err error
-		if rn.transport, err = protocol.NewTransport("tcp", rn.Addr); err != nil {
+		if rn.transport, err = protocol.NewTransport("tcp", rn.Addr, protocol.NodeType, rn.ID, rn.PublicKey, key); err != nil {
 			// we had an error setting up our connection
 			return models.Node{}, errors.Wrap(err, "failed creating transport: ")
 		}
@@ -87,9 +90,6 @@ func (rn *RemoteNode) Successor(id models.Identifier) (models.Node, error) {
 
 	// send request to the remote
 	resp, err := rn.transport.RoundTrip(&protocol.Request{
-		Header: protocol.Header{
-			Key: id,
-		},
 		Method: protocol.GetSuccessorMethod,
 		Data:   reqBuffer.Bytes(),
 	})
@@ -113,11 +113,11 @@ func (rn *RemoteNode) Successor(id models.Identifier) (models.Node, error) {
 }
 
 // SetPredecessor - set the predecessor on a remote node to node
-func (rn *RemoteNode) SetPredecessor(node models.Node) error {
+func (rn *RemoteNode) SetPredecessor(node models.Node, key *rsa.PrivateKey) error {
 	// if connection is nil, create a new connection to the remote node
 	if rn.transport == nil {
 		var err error
-		if rn.transport, err = protocol.NewTransport("tcp", rn.Addr); err != nil {
+		if rn.transport, err = protocol.NewTransport("tcp", rn.Addr, protocol.NodeType, rn.ID, rn.PublicKey, key); err != nil {
 			// we had an error setting up our connection
 			return errors.Wrap(err, "failed creating transport: ")
 		}
@@ -132,9 +132,6 @@ func (rn *RemoteNode) SetPredecessor(node models.Node) error {
 
 	// send request to the remote
 	_, err := rn.transport.RoundTrip(&protocol.Request{
-		Header: protocol.Header{
-			Key: node.ID,
-		},
 		Method: protocol.SetPredecessorMethod,
 		Data:   reqBuffer.Bytes(),
 	})
