@@ -182,6 +182,28 @@ func main() {
 		glog.Fatalf("Failed to create new server: %v", err)
 	}
 
+	if initialPeerKeyFile != "" {
+		// need to register with our peer first thing
+		t, err := protocol.NewTransport("tcp", peerNode.Addr, protocol.NodeType, models.Identifier(sha1.Sum([]byte(addr))), peerNode.PublicKey, key)
+		resp, err := t.RoundTrip(&protocol.Request{
+			Header: protocol.Header{
+				From:     models.Identifier(sha1.Sum([]byte(addr))),
+				FromAddr: addr,
+				Type:     protocol.NodeType,
+				PubKey:   key.Public().(*rsa.PublicKey),
+			},
+			Method: protocol.NodeRegistrationMethod,
+		})
+		if err != nil {
+			// failed to register with peer node
+			glog.Infof("failed to register trust with peer node")
+			return
+		}
+		glog.Infof("Response from registration: %+v", resp)
+		// TODO: iterate through all nodes in response, and contact all of
+		// them to "NodeTrustMethod" them
+	}
+
 	// create our local chord node.
 	localNode, err := chord.NewLocalNode(server, addr, peerNode)
 
@@ -220,7 +242,7 @@ func main() {
 	server.Handle(protocol.GetPredecessorMethod, localNode.GetPredecessorHandler)
 	server.Handle(protocol.GetFingerTableMethod, localNode.FingerTableHandler)
 	// registration route
-	server.Handle(protocol.UserRegistrationMethod, localNode.UserRegistrationHandler)
+	server.Handle(protocol.UserRegistrationMethod, server.UserRegistrationHandler)
 	// node registration route
 	server.Handle(protocol.NodeRegistrationMethod, server.NodeRegistrationHandler)
 	server.Handle(protocol.NodeTrustMethod, server.NodeTrustHandler)

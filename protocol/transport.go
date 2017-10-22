@@ -1,14 +1,12 @@
 package protocol
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/rsa"
 	"encoding/gob"
 	"net"
 
 	"github.com/golang/glog"
-	"github.com/husobee/peerstore/crypto"
 	"github.com/husobee/peerstore/models"
 	"github.com/pkg/errors"
 )
@@ -70,81 +68,13 @@ func NewTransport(proto, addr string, t CallerType, id models.Identifier, peerKe
 // effectively this is how the request will be serialized,
 // and put on the wire, and how the response will be deserialized
 func (t *Transport) RoundTrip(request *Request) (Response, error) {
-	// create a buffer for the request to be serialized to
-	buf := bytes.NewBuffer([]byte{})
-
-	// serialize the request to the buffer
-	requestEncoder := gob.NewEncoder(buf)
-	if err := requestEncoder.Encode(request); err != nil {
+	err := encryptAndEncode(t.enc, request, t.peerKey, t.from, t.selfKey)
+	if err != nil {
+		glog.Infof("failed to encrypt and encode in roundtrip: %s", err)
 		return Response{}, errors.Wrap(err, "failure encoding request: ")
 	}
-
-	// generate the session key
-	plaintextKey, ciphertextKey, err := crypto.GenerateSessionKey(t.peerKey)
-	if err != nil {
-		glog.Infof("failed to generate session key: %s", err)
-		return Response{}, errors.Wrap(err, "failure generating session: ")
-	}
-	// encrypt with AES
-	ciphertext, iv, err := crypto.Encrypt(plaintextKey, buf.Bytes())
-	if err != nil {
-		glog.Infof("failed to generate ciphertext: %s", err)
-		return Response{}, errors.Wrap(err, "failure generating ciphertext: ")
-	}
-
-	reqEM := &EncryptedMessage{
-		Header: Header{
-			Type:   t.Type,
-			PubKey: t.selfKey.Public().(*rsa.PublicKey),
-			From:   t.from,
-		},
-		SessionKey: ciphertextKey,
-		IV:         iv,
-		CipherText: ciphertext,
-	}
-
-	glog.Infof("request encrypted message is: %v", reqEM)
-
-	// serialize request
-	if err := t.enc.Encode(reqEM); err != nil {
-		return Response{}, errors.Wrap(err, "failure encoding request: ")
-	}
-
-	// unserialize response
-	var respEM = new(EncryptedMessage)
-	if err := t.dec.Decode(&respEM); err != nil {
-		return Response{}, errors.Wrap(err, "failure decoding response: ")
-	}
-	// validate response
-	if err := respEM.Validate(); err != nil {
-		return Response{}, errors.Wrap(err, "failure validating response: ")
-	}
-
-	// decrypt the session key
-	sessionKey, err := crypto.DecryptRSA(t.selfKey, respEM.SessionKey)
-	if err != nil {
-		return Response{}, errors.Wrap(err, "failure decrypting session key: ")
-	}
-	// decrypt the ciphertext
-	plaintext, err := crypto.Decrypt(sessionKey, respEM.IV, respEM.CipherText)
-
-	// gob decode the response from plaintext
-
-	var (
-		plaintextBuf = bytes.NewBuffer(plaintext)
-		respDecoder  = gob.NewDecoder(plaintextBuf)
-		response     = Response{}
-	)
-
-	if err := respDecoder.Decode(&response); err != nil {
-		return Response{}, errors.Wrap(err, "failure decoding response: ")
-	}
-
-	// validate response
-	if err := response.Validate(); err != nil {
-		return Response{}, errors.Wrap(err, "failure validating response: ")
-	}
-	return response, nil
+	_, response, err := decryptAndDecodeResponse(t.dec, t.selfKey)
+	return *response, err
 }
 
 type CallerType uint8
@@ -160,8 +90,11 @@ const (
 type Header struct {
 	Key        models.Identifier
 	From       models.Identifier
+	FromAddr   string
 	Type       CallerType
 	PubKey     *rsa.PublicKey
+	SignedBy   models.Identifier
+	Signature  []byte
 	DataLength uint64
 }
 

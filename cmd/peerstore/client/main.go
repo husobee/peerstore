@@ -163,6 +163,7 @@ func main() {
 				response, err := t.RoundTrip(&protocol.Request{
 					Header: protocol.Header{
 						Key:        key,
+						From:       id,
 						DataLength: uint64(len(data)),
 					},
 					Method: protocol.PostFileMethod,
@@ -203,7 +204,8 @@ func main() {
 		})
 		resp, err := st.RoundTrip(&protocol.Request{
 			Header: protocol.Header{
-				Key: key,
+				From: id,
+				Key:  key,
 			},
 			Method: protocol.GetSuccessorMethod,
 			Data:   idBuf.Bytes(),
@@ -231,7 +233,8 @@ func main() {
 
 		resp, err = t.RoundTrip(&protocol.Request{
 			Header: protocol.Header{
-				Key: key,
+				From: id,
+				Key:  key,
 			},
 			Method: protocol.GetFileMethod,
 		})

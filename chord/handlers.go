@@ -46,9 +46,8 @@ func (ln *LocalNode) SuccessorHandler(ctx context.Context, r *protocol.Request) 
 
 	// this point we have the ID, time to call successor on ln
 	node, err := ln.Successor(in.ID)
-	glog.Infof("successor found: addr=%s, id=%s\n",
-		node.Addr,
-		hex.EncodeToString(node.ID[:]))
+	glog.Infof("successor found: %s\n",
+		node.ToString())
 
 	enc := gob.NewEncoder(out)
 	if err := enc.Encode(node); err != nil {
@@ -60,9 +59,8 @@ func (ln *LocalNode) SuccessorHandler(ctx context.Context, r *protocol.Request) 
 	// write the response to the bytes of the response data
 	response.Data = out.Bytes()
 
-	glog.Infof("response for successor handler: Node.Addr=%s, Node.ID=%s\n",
-		node.Addr,
-		hex.EncodeToString(node.ID[:]))
+	glog.Infof("response for successor handler: %s\n",
+		node.ToString())
 
 	return response
 }
@@ -114,6 +112,8 @@ func (ln *LocalNode) SetPredecessorHandler(ctx context.Context, r *protocol.Requ
 			Status: protocol.Error,
 		}
 	}
+
+	glog.Infof("Set Predecessor Handler is getting set to: %s", in)
 
 	// set the predecessor in ln
 	err = ln.SetPredecessor(*in)

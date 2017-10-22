@@ -34,6 +34,7 @@ func NewLocalNode(s *protocol.Server, addr string, peer models.Node) (*LocalNode
 		ID: models.Identifier(
 			sha1.Sum([]byte(addr)),
 		),
+		PublicKey: s.PrivateKey.Public().(*rsa.PublicKey),
 	}
 
 	var (
@@ -94,6 +95,7 @@ func (ln *LocalNode) Stabilize() error {
 		if newPredecessor.Addr != "" {
 			// if the first entry in finger is ourself, then we dont have a successor
 			predecessor := newPredecessor
+			glog.Infof("--------------here is predecessor: %s", predecessor)
 			for {
 				// lookup the public key for the predecessor
 				predecessorRN, err := NewRemoteNode(predecessor.Addr, predecessor.PublicKey)
@@ -164,9 +166,7 @@ func (ln *LocalNode) Stabilize() error {
 					errors.Wrap(err, "error creating new remote node for successor: ")
 				}
 				glog.Info("!!! succPredID < lnID -> CORRECTING HERE")
-				if err := successorRN.SetPredecessor(models.Node{
-					Addr: ln.Addr, ID: ln.ID,
-				}, ln.server.PrivateKey); err != nil {
+				if err := successorRN.SetPredecessor(ln.ToNode(), ln.server.PrivateKey); err != nil {
 					glog.Infof("error resetting successor's predecessor to self", err)
 					return errors.Wrap(err, "error setting new successor's predecessor to self: ")
 				}
@@ -195,9 +195,7 @@ func (ln *LocalNode) Stabilize() error {
 				}
 
 				// set the new successor's predecessor to ourselves
-				if err := newSuccessorRN.SetPredecessor(models.Node{
-					Addr: ln.Addr, ID: ln.ID,
-				}, ln.server.PrivateKey); err != nil {
+				if err := newSuccessorRN.SetPredecessor(ln.ToNode(), ln.server.PrivateKey); err != nil {
 					glog.Infof("error setting new successor's predecessor to self", err)
 					return errors.Wrap(err, "error setting new successor's predecessor to self: ")
 				}
@@ -229,9 +227,7 @@ func (ln *LocalNode) Stabilize() error {
 				}
 
 				// set the new successor's predecessor to ourselves
-				if err := newSuccessorRN.SetPredecessor(models.Node{
-					Addr: ln.Addr, ID: ln.ID,
-				}, ln.server.PrivateKey); err != nil {
+				if err := newSuccessorRN.SetPredecessor(ln.ToNode(), ln.server.PrivateKey); err != nil {
 					glog.Infof("error setting new successor's predecessor to self", err)
 					return errors.Wrap(err, "error setting new successor's predecessor to self: ")
 				}
@@ -250,9 +246,7 @@ func (ln *LocalNode) Stabilize() error {
 				glog.Infof("!!! lnID < succPredID && succPredID < succID : %d < %d && %d < %d",
 					lnID, succPredID, succPredID, succID,
 				)
-				if err := successorRN.SetPredecessor(models.Node{
-					Addr: ln.Addr, ID: ln.ID,
-				}, ln.server.PrivateKey); err != nil {
+				if err := successorRN.SetPredecessor(ln.ToNode(), ln.server.PrivateKey); err != nil {
 					glog.Infof("error resetting successor's predecessor to self", err)
 					return errors.Wrap(err, "error setting new successor's predecessor to self: ")
 				}
@@ -317,7 +311,7 @@ func (ln *LocalNode) Initialize(peer models.Node) error {
 	}
 
 	glog.Infof("!!! should only initialize once")
-	if err := successorRN.SetPredecessor(models.Node{Addr: ln.Addr, ID: ln.ID}, ln.server.PrivateKey); err != nil {
+	if err := successorRN.SetPredecessor(ln.ToNode(), ln.server.PrivateKey); err != nil {
 		glog.Infof("error setting new predecessor on remote node: %v\n", err)
 		errors.Wrap(err, "error setting new predecessor on remote node:")
 	}

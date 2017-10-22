@@ -19,6 +19,13 @@ const (
 	DataPathContextKey ContextKey = iota
 	// NumRequestWorkerContextKey - this is the context key for the data path
 	NumRequestWorkerContextKey
+	// SignatureContextKey - this is how the signature of the request is passed
+	// to the handlers
+	SignatureContextKey
+	// ValidOwnerFunctionContextKey - function that performs validation of the ownership of a file
+	ValidOwnerFunctionContextKey
+	// RequestFileOwnerIDContextKey - The request "from" field
+	RequestFileOwnerIDContextKey
 )
 
 func init() {
@@ -62,8 +69,8 @@ func (n Node) CompareID(id Identifier) int {
 
 // ToString - Implementation of String
 func (n Node) ToString() string {
-	return fmt.Sprintf("addr=%s, id=%s", n.Addr,
-		hex.EncodeToString(n.ID[:]))
+	return fmt.Sprintf("addr=%s, id=%s, pubkey=%v", n.Addr,
+		hex.EncodeToString(n.ID[:]), n.PublicKey)
 }
 
 // M - This is the max number of nodes in a finger table

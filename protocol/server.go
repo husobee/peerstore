@@ -7,7 +7,6 @@ import (
 	"crypto/sha1"
 	"encoding/gob"
 	"encoding/hex"
-	"io"
 	"net"
 	"os"
 	"sync"
@@ -22,6 +21,7 @@ import (
 // Server - base server type, contains a listener to listen for sockets
 type Server struct {
 	PrivateKey        *rsa.PrivateKey
+	id                models.Identifier
 	listener          net.Listener
 	ctx               context.Context
 	connChan          chan net.Conn
@@ -49,6 +49,7 @@ func NewServer(key *rsa.PrivateKey, peer models.Node, address, dataPath string, 
 	return &Server{
 		PrivateKey: key,
 		listener:   listener,
+		id:         id,
 		ctx: context.WithValue(
 			context.WithValue(
 				context.Background(), models.DataPathContextKey, dataPath),
@@ -66,6 +67,34 @@ func NewServer(key *rsa.PrivateKey, peer models.Node, address, dataPath string, 
 		},
 		trustedNodesMapMu: new(sync.RWMutex),
 	}, nil
+}
+
+// addTrustedNode - Add a node as a trusted node in the trustedNodes structure
+func (s *Server) addTrustedNode(node models.Node) {
+	s.trustedNodesMapMu.Lock()
+	defer s.trustedNodesMapMu.Unlock()
+	s.trustedNodes[node.ID] = node
+}
+
+// getTrustedNode - Get a node from the trustedNodes structure
+func (s *Server) getTrustedNode(id models.Identifier) (models.Node, error) {
+	s.trustedNodesMapMu.RLock()
+	defer s.trustedNodesMapMu.RUnlock()
+	if node, ok := s.trustedNodes[id]; ok {
+		return node, nil
+	}
+	return models.Node{}, errors.New("node does not exist in trustedNodes")
+}
+
+// getAllTrustedNodes - Get a list of trustedNodes
+func (s *Server) getAllTrustedNodes() []models.Node {
+	s.trustedNodesMapMu.RLock()
+	defer s.trustedNodesMapMu.RUnlock()
+	resp := []models.Node{}
+	for _, node := range s.trustedNodes {
+		resp = append(resp, node)
+	}
+	return resp
 }
 
 // startWorkers - we will start the number of numWorkers for the server to
@@ -161,63 +190,10 @@ func (s *Server) handleConnection(conn net.Conn) {
 	encoder := gob.NewEncoder(conn)
 Outer:
 	for {
-		var em = new(EncryptedMessage)
-		err := decoder.Decode(em)
+		em, request, err := decryptAndDecodeRequest(decoder, s.PrivateKey)
 		if err != nil {
-			glog.Infof("ERR: %v\n", err)
-			if err == io.EOF {
-				// the connection has hung up.
-				return
-			}
-			// get the public key of the from
-			// another decoding error
-			encoder.Encode(Response{
-				Status: Error,
-			})
-		}
-		glog.Infof("encrypted message is: %v", em)
-		// em now has our encrypted message,
-		// decrypt session key
-		sessionKey, err := crypto.DecryptRSA(s.PrivateKey, em.SessionKey)
-		if err != nil {
-			glog.Infof("Invalid Session Key - ERR: %v\n", err)
+			glog.Infof("err: %v\n", err)
 			return
-		}
-
-		glog.Infof("session key is: %v from %v", sessionKey, em.SessionKey)
-
-		// now decrypt the actual payload
-		payload, err := crypto.Decrypt(sessionKey, em.CipherText, em.IV)
-		if err != nil {
-			glog.Infof("Invalid Ciphertext - ERR: %v\n", err)
-			return
-		}
-
-		// now decode the request from the payload bytes
-		payloadDecoder := gob.NewDecoder(bytes.NewBuffer(payload))
-
-		var request = new(Request)
-		err = payloadDecoder.Decode(request)
-		if err != nil {
-			glog.Infof("ERR: %v\n", err)
-			if err == io.EOF {
-				// the connection has hung up.
-				return
-			}
-			// another decoding error
-			encoder.Encode(Response{
-				Status: Error,
-			})
-		}
-
-		if request.Validate(); err != nil {
-			glog.Infof("ERR: %v\n", err)
-			// write the validation error out.
-			// TODO: encrypt this back to caller
-			encoder.Encode(Response{
-				Status: Error,
-			})
-			continue Outer
 		}
 		// at this point we have a request struct,
 		// we will now figure out what type of message it is and perform
@@ -231,22 +207,42 @@ Outer:
 		handler, ok := s.handlerMap[request.Method]
 		s.handlerMapMu.RUnlock()
 		if ok {
-			// TODO: below
-			// create session key for caller -> get the public key from trusted nodes
-			// or if a user, from the DHT..
-			// -> if this is a node registration, or node trust call, it will be added
-			// in the handler so we should be good no matter the call.
-			// encrypt response from handler
-			// encode it to encoder as encrypted message
+			// based on the type, we are going to authenticate this request
+			switch em.Header.Type {
+			case UserType:
+				// in the event this is a user type we need to call ourself to
+				// figure out which node to talk to in order to get the public
+				// key file.  We will masqurade as the "from" for our request
+				// and get the key file.  When we have the key file from
+				// the dht, we will use that key file to validate the user's
+				// signature of the request.  if the signature is invalid,
+				// we will respond with an error, as this request is not authorized
 
-			encoder.Encode(handler(s.ctx, request))
+				// lookup the user based on the From field in the request header
+
+			case NodeType:
+				// if this is a node type request, we need to validate this node
+				// is in our trustedNodes map, and use the public key from
+				// there to validate the request, if the request signature is not
+				// valid we will return an error
+
+				// skip this if this is a node registration request
+			default:
+				// has to be one of the above two.
+				encryptAndEncode(encoder, Response{
+					Status: Error,
+				}, em.Header.PubKey, s.id, s.PrivateKey)
+			}
+
+			encryptAndEncode(
+				encoder, handler(s.ctx, request), em.Header.PubKey, s.id, s.PrivateKey)
 			continue Outer
 		}
 		// no handler to call
 		glog.Infof("Request is an Unknown Request")
-		encoder.Encode(Response{
+		encryptAndEncode(encoder, Response{
 			Status: Error,
-		})
+		}, em.Header.PubKey, s.id, s.PrivateKey)
 	}
 }
 
@@ -255,4 +251,140 @@ func (s *Server) Handle(method RequestMethod, fn Handler) {
 	s.handlerMapMu.Lock()
 	defer s.handlerMapMu.Unlock()
 	s.handlerMap[method] = fn
+}
+
+func encryptAndEncode(enc encoder, payload interface{}, peerKey *rsa.PublicKey, from models.Identifier, selfKey *rsa.PrivateKey) error {
+	// create a buffer for the request to be serialized to
+	buf := bytes.NewBuffer([]byte{})
+
+	// serialize the request to the buffer
+	requestEncoder := gob.NewEncoder(buf)
+	if err := requestEncoder.Encode(payload); err != nil {
+		glog.Infof("failed to encode request: %s", err)
+		return errors.Wrap(err, "failure encoding request: ")
+	}
+
+	// sign the request bytes
+	signature, err := crypto.Sign(selfKey, buf.Bytes())
+
+	// generate the session key
+	plaintextKey, ciphertextKey, err := crypto.GenerateSessionKey(peerKey)
+	if err != nil {
+		glog.Infof("failed to generate session key: %s", err)
+		return errors.Wrap(err, "failure generating session: ")
+	}
+	// encrypt with AES
+	ciphertext, iv, err := crypto.Encrypt(plaintextKey, buf.Bytes())
+	if err != nil {
+		glog.Infof("failed to generate ciphertext: %s", err)
+		return errors.Wrap(err, "failure generating ciphertext: ")
+	}
+
+	respEM := &EncryptedMessage{
+		Header: Header{
+			Type:      NodeType,
+			PubKey:    selfKey.Public().(*rsa.PublicKey),
+			From:      from,
+			Signature: signature,
+		},
+		SessionKey: ciphertextKey,
+		IV:         iv,
+		CipherText: ciphertext,
+	}
+
+	// serialize request
+	if err := enc.Encode(respEM); err != nil {
+		return errors.Wrap(err, "failure encoding request: ")
+	}
+	return nil
+}
+
+func decryptAndDecodeResponse(dec decoder, selfKey *rsa.PrivateKey) (*EncryptedMessage, *Response, error) {
+	var em = new(EncryptedMessage)
+	err := dec.Decode(em)
+	if err != nil {
+		glog.Infof("ERR: %v\n", err)
+		return em, nil, errors.Wrap(err, "failed to decrypt response")
+	}
+
+	// validate response
+	if err := em.Validate(); err != nil {
+		return em, nil, errors.Wrap(err, "failure validating response: ")
+	}
+
+	// em now has our encrypted message,
+	// decrypt session key
+	sessionKey, err := crypto.DecryptRSA(selfKey, em.SessionKey)
+	if err != nil {
+		glog.Infof("Invalid Session Key - ERR: %v\n", err)
+		return em, nil, errors.Wrap(err, "invalid session key")
+	}
+
+	glog.Infof("session key is: %v from %v", sessionKey, em.SessionKey)
+
+	// now decrypt the actual payload
+	payload, err := crypto.Decrypt(sessionKey, em.CipherText, em.IV)
+	if err != nil {
+		glog.Infof("Invalid Ciphertext - ERR: %v\n", err)
+		return em, nil, errors.Wrap(err, "invalid ciphertext")
+	}
+
+	// now decode the request from the payload bytes
+	payloadDecoder := gob.NewDecoder(bytes.NewBuffer(payload))
+
+	var response = new(Response)
+	err = payloadDecoder.Decode(response)
+	if err != nil {
+		return em, nil, errors.Wrap(err, "failed to decode response")
+	}
+	// validate response
+	if err := response.Validate(); err != nil {
+		return em, nil, errors.Wrap(err, "failure validating response: ")
+	}
+	return em, response, nil
+}
+
+func decryptAndDecodeRequest(dec decoder, selfKey *rsa.PrivateKey) (*EncryptedMessage, *Request, error) {
+	var em = new(EncryptedMessage)
+	err := dec.Decode(em)
+	if err != nil {
+		glog.Infof("ERR: %v\n", err)
+		return em, nil, errors.Wrap(err, "failed to decrypt response")
+	}
+
+	// validate response
+	if err := em.Validate(); err != nil {
+		return em, nil, errors.Wrap(err, "failure validating response: ")
+	}
+
+	// em now has our encrypted message,
+	// decrypt session key
+	sessionKey, err := crypto.DecryptRSA(selfKey, em.SessionKey)
+	if err != nil {
+		glog.Infof("Invalid Session Key - ERR: %v\n", err)
+		return em, nil, errors.Wrap(err, "invalid session key")
+	}
+
+	glog.Infof("session key is: %v from %v", sessionKey, em.SessionKey)
+
+	// now decrypt the actual payload
+	payload, err := crypto.Decrypt(sessionKey, em.CipherText, em.IV)
+	if err != nil {
+		glog.Infof("Invalid Ciphertext - ERR: %v\n", err)
+		return em, nil, errors.Wrap(err, "invalid ciphertext")
+	}
+
+	// now decode the request from the payload bytes
+	payloadDecoder := gob.NewDecoder(bytes.NewBuffer(payload))
+
+	var request = new(Request)
+	err = payloadDecoder.Decode(request)
+	if err != nil {
+		return em, nil, errors.Wrap(err, "failed to decode response")
+	}
+
+	if err := request.Validate(); err != nil {
+		return em, nil, errors.Wrap(err, "failed to validate request")
+	}
+	return em, request, nil
 }

@@ -6,6 +6,7 @@ import (
 	"crypto/sha1"
 	"encoding/gob"
 
+	"github.com/golang/glog"
 	"github.com/husobee/peerstore/models"
 	"github.com/husobee/peerstore/protocol"
 	"github.com/pkg/errors"
@@ -38,6 +39,11 @@ func NewRemoteNode(addr string, key *rsa.PublicKey) (*RemoteNode, error) {
 // GetPredecessor - Get the predecessor of a remote node
 func (rn *RemoteNode) GetPredecessor(key *rsa.PrivateKey) (models.Node, error) {
 	// if connection is nil, create a new connection to the remote node
+
+	if rn.PublicKey == nil {
+		glog.Infof("HERE THE RN HAS NO PUBLIC KEY")
+	}
+
 	if rn.transport == nil {
 		var err error
 		if rn.transport, err = protocol.NewTransport("tcp", rn.Addr, protocol.NodeType, rn.ID, rn.PublicKey, key); err != nil {
@@ -46,7 +52,6 @@ func (rn *RemoteNode) GetPredecessor(key *rsa.PrivateKey) (models.Node, error) {
 		}
 	}
 	// send request to the remote
-	// TODO: encryption is done in the round tripper.
 	resp, err := rn.transport.RoundTrip(&protocol.Request{
 		Method: protocol.GetPredecessorMethod,
 	})
@@ -88,12 +93,15 @@ func (rn *RemoteNode) Successor(id models.Identifier, key *rsa.PrivateKey) (mode
 		return models.Node{}, errors.Wrap(err, "failed to encode request: ")
 	}
 
+	glog.Infof("rn.PublicKey is %v", rn.PublicKey)
 	// send request to the remote
 	resp, err := rn.transport.RoundTrip(&protocol.Request{
 		Method: protocol.GetSuccessorMethod,
 		Data:   reqBuffer.Bytes(),
 	})
 	rn.transport.Close()
+
+	glog.Info("DO I GET HERE??????????????????????")
 
 	if err != nil {
 		return models.Node{}, errors.Wrap(err, "failed round trip: ")
@@ -116,6 +124,7 @@ func (rn *RemoteNode) Successor(id models.Identifier, key *rsa.PrivateKey) (mode
 func (rn *RemoteNode) SetPredecessor(node models.Node, key *rsa.PrivateKey) error {
 	// if connection is nil, create a new connection to the remote node
 	if rn.transport == nil {
+		glog.Infof("setting up transport for set pred call: %v", node)
 		var err error
 		if rn.transport, err = protocol.NewTransport("tcp", rn.Addr, protocol.NodeType, rn.ID, rn.PublicKey, key); err != nil {
 			// we had an error setting up our connection
