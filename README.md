@@ -86,51 +86,5 @@ chosen for the following reasons:
     1. Compiled, strongly typed, cross platform
     2. Speed
 
-## Deliverable 1
-
-The goal for deliverable #1 is create a distributed hash table (DHT) which will
-evenly distribute the storage of files across nodes, along with the file
-transfer primatives used to store files within the nodes of this DHT.
-
-A distributed hash table is a mechanism by which all of the nodes in the peer to
-peer network are able to figure out which node is responsible for the action, or
-value in question.  To this end, the DHT needs to have a deterministic way of
-taking a "key" and assigning it to a "node" in the network.  For this project
-we will be implementing the [Chord][chord] protocol.
-
-Chord was selected as the DHT algorithm of choice for the following reasons:
-    1. Ease of implementation and understandability
-    2. Even distribution of keys across nodes based on "consistent hashing"
-    3. Eventual consistency of key node mapping for joins/departs with Sanitize
-
-Chord is a logical ring network overlay topology.  In the most naive
-implementation, a node knows about it's successor, and it's predecessor, which
-allows the node to send a query around in a ring of connected machines.  There
-is a concept of a routing table within Chord using a finger table which allows
-for increased performance in lookups of keys, but has a drawback in that there
-are more messages required on node join and depart to keep all the other node's
-finger tables up to date.
-
-As Chord is merely an algorithm for figuring out to which node a key belongs, we
-will not only have to implement all of the chord specific Remote Proceedure
-Calls (RPC) for the chord primatives, but also the application layer primatives
-for retrieving and pushing of file data, as well as storage of the files on the
-particular nodes in the network.
-
-For the file primatives, we will be implimenting the following RPC functionality
-on every node:
-
-* GetFile(key) => bytes
-* PostFile(key, bytes) => success/failure
-* DeleteFile(key) => success/failure
-* PatchFile(key, bytes) => success/failure
-
-This way, after we find the responsible node for a given key, we can then
-perform any of the four standard CRUD based operations on that given file.
-
-
-
-
-
 
 [chord]: docs/chord_sigcomm.pdf
