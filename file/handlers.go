@@ -29,8 +29,9 @@ func GetFileHandler(ctx context.Context, r *protocol.Request) protocol.Response 
 	}
 
 	// read the owner id out of the "header" of the file
-	id := models.Identifier{}
-	n, err := buf.Read(id[:])
+	idSlice := make([]byte, 20)
+	n, err := buf.Read(idSlice)
+	glog.Infof("header is: %x", idSlice)
 	if n != 20 {
 		glog.Infof("ERR: could not read header from file\n")
 		return protocol.Response{
@@ -43,6 +44,8 @@ func GetFileHandler(ctx context.Context, r *protocol.Request) protocol.Response 
 			Status: protocol.Error,
 		}
 	}
+	id := models.Identifier{}
+	copy(id[:], idSlice)
 
 	// all we need to do here is compare the from in the request
 	// header to what the file "header" has, as we have already

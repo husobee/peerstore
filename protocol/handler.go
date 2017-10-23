@@ -3,6 +3,7 @@ package protocol
 import (
 	"bytes"
 	"context"
+	"crypto/rsa"
 	"encoding/gob"
 
 	"github.com/golang/glog"
@@ -36,12 +37,14 @@ func (s *Server) NodeRegistrationHandler(ctx context.Context, r *Request) Respon
 			Status: Error,
 		}
 	}
-	// we do not have this node, so we should add it
-	s.addTrustedNode(models.Node{
+	node := models.Node{
 		ID:        r.Header.From,
 		Addr:      r.Header.FromAddr,
 		PublicKey: r.Header.PubKey,
-	})
+	}
+	glog.Infof("adding this node to trustedNode: %s", node.ToString())
+	// we do not have this node, so we should add it
+	s.addTrustedNode(node)
 	// sign the requested node's public key with our private key
 	buf := bytes.NewBuffer([]byte{})
 	encoder := gob.NewEncoder(buf)
@@ -141,5 +144,73 @@ func (s *Server) UserRegistrationHandler(ctx context.Context, r *Request) Respon
 	// take the request pubkey and figure out which node it belongs to,
 	// and write the public key to a file using the file request to said
 	// node for others to lookup as needed
-	return Response{}
+	buf := bytes.NewBuffer([]byte{})
+	err := crypto.WritePublicKeyAsPem(buf, r.Header.PubKey)
+	if err != nil {
+		glog.Infof("failed to write pub key as pem: %s", err)
+		return Response{Status: Error}
+	}
+
+	// figure out where to connect to, by asking self
+	t, err := NewTransport("tcp", s.addr, NodeType, s.id, s.PrivateKey.Public().(*rsa.PublicKey), s.PrivateKey)
+	defer t.Close()
+	if err != nil {
+		glog.Infof("ERR: %v", err)
+		return Response{Status: Error}
+	}
+	// serialize our get successor request
+	var idBuf = new(bytes.Buffer)
+	enc := gob.NewEncoder(idBuf)
+	enc.Encode(models.SuccessorRequest{
+		models.Identifier(r.Header.Key),
+	})
+
+	resp, err := t.RoundTrip(&Request{
+		Header: Header{
+			From: s.id,
+			Key:  r.Header.From,
+		},
+		Method: GetSuccessorMethod,
+		Data:   idBuf.Bytes(),
+	})
+	if err != nil {
+		glog.Infof("Failed to round trip the successor request: %v", err)
+		return Response{Status: Error}
+	}
+	// connect to that host for this file
+	// pull node out of response, and connect to that host
+	var node = models.Node{}
+	dec := gob.NewDecoder(bytes.NewBuffer(resp.Data))
+	err = dec.Decode(&node)
+	if err != nil {
+		glog.Infof("Failed to deserialize the node data: %v", err)
+		return Response{Status: Error}
+	}
+
+	// OKAY, NOW connect to it, and store the file
+	// figure out where to connect to, by asking self
+	st, err := NewTransport("tcp", node.Addr, NodeType, s.id, node.PublicKey, s.PrivateKey)
+	defer st.Close()
+	if err != nil {
+		glog.Infof("ERR: %v", err)
+		return Response{Status: Error}
+	}
+
+	glog.Infof("server id is : %+v", s.id)
+	response, err := st.RoundTrip(&Request{
+		Header: Header{
+			Key:        r.Header.From,
+			From:       s.id,
+			DataLength: uint64(len(buf.Bytes())),
+		},
+		Method: PostFileMethod,
+		Data:   buf.Bytes(),
+	})
+	if err != nil {
+		glog.Infof("ERR: %v\n", err)
+		return Response{Status: Error}
+	}
+	glog.Infof("response from file post: %+v", response)
+
+	return Response{Status: Success}
 }

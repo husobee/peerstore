@@ -11,16 +11,6 @@ import (
 	"github.com/husobee/peerstore/protocol"
 )
 
-func init() {
-	gob.Register(SuccessorRequest{})
-}
-
-// SuccessorRequest - this is the chord successor request strurture, the ID
-// is the key we are looking to find a successor for.
-type SuccessorRequest struct {
-	ID models.Identifier
-}
-
 // SuccessorHandler - the handler to handle all server calls to get successor for this local node
 func (ln *LocalNode) SuccessorHandler(ctx context.Context, r *protocol.Request) protocol.Response {
 	// get the request, pull out the ID from the request body
@@ -29,7 +19,7 @@ func (ln *LocalNode) SuccessorHandler(ctx context.Context, r *protocol.Request) 
 			Status: protocol.Success,
 		}
 		body = bytes.NewBuffer(r.Data)
-		in   = &SuccessorRequest{}
+		in   = &models.SuccessorRequest{}
 		out  = &bytes.Buffer{}
 	)
 

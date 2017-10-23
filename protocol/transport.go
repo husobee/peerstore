@@ -68,12 +68,12 @@ func NewTransport(proto, addr string, t CallerType, id models.Identifier, peerKe
 // effectively this is how the request will be serialized,
 // and put on the wire, and how the response will be deserialized
 func (t *Transport) RoundTrip(request *Request) (Response, error) {
-	err := encryptAndEncode(t.enc, request, t.peerKey, t.from, t.selfKey)
+	err := encryptAndEncode(t.enc, request, t.Type, t.peerKey, t.from, t.selfKey)
 	if err != nil {
 		glog.Infof("failed to encrypt and encode in roundtrip: %s", err)
 		return Response{}, errors.Wrap(err, "failure encoding request: ")
 	}
-	_, response, err := decryptAndDecodeResponse(t.dec, t.selfKey)
+	_, response, _, err := decryptAndDecodeResponse(t.dec, t.selfKey)
 	return *response, err
 }
 

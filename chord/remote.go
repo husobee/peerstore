@@ -53,6 +53,12 @@ func (rn *RemoteNode) GetPredecessor(key *rsa.PrivateKey) (models.Node, error) {
 	}
 	// send request to the remote
 	resp, err := rn.transport.RoundTrip(&protocol.Request{
+		Header: protocol.Header{
+			From:     rn.ID,
+			FromAddr: rn.Addr,
+			Type:     protocol.NodeType,
+			PubKey:   rn.PublicKey,
+		},
 		Method: protocol.GetPredecessorMethod,
 	})
 	rn.transport.Close()
@@ -89,13 +95,19 @@ func (rn *RemoteNode) Successor(id models.Identifier, key *rsa.PrivateKey) (mode
 	var reqBuffer = new(bytes.Buffer)
 
 	enc := gob.NewEncoder(reqBuffer)
-	if err := enc.Encode(SuccessorRequest{id}); err != nil {
+	if err := enc.Encode(models.SuccessorRequest{id}); err != nil {
 		return models.Node{}, errors.Wrap(err, "failed to encode request: ")
 	}
 
 	glog.Infof("rn.PublicKey is %v", rn.PublicKey)
 	// send request to the remote
 	resp, err := rn.transport.RoundTrip(&protocol.Request{
+		Header: protocol.Header{
+			From:     rn.ID,
+			FromAddr: rn.Addr,
+			Type:     protocol.NodeType,
+			PubKey:   rn.PublicKey,
+		},
 		Method: protocol.GetSuccessorMethod,
 		Data:   reqBuffer.Bytes(),
 	})
@@ -141,6 +153,12 @@ func (rn *RemoteNode) SetPredecessor(node models.Node, key *rsa.PrivateKey) erro
 
 	// send request to the remote
 	_, err := rn.transport.RoundTrip(&protocol.Request{
+		Header: protocol.Header{
+			From:     rn.ID,
+			FromAddr: rn.Addr,
+			Type:     protocol.NodeType,
+			PubKey:   rn.PublicKey,
+		},
 		Method: protocol.SetPredecessorMethod,
 		Data:   reqBuffer.Bytes(),
 	})

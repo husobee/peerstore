@@ -11,6 +11,16 @@ import (
 	"github.com/pkg/errors"
 )
 
+func init() {
+	gob.Register(SuccessorRequest{})
+}
+
+// SuccessorRequest - this is the chord successor request strurture, the ID
+// is the key we are looking to find a successor for.
+type SuccessorRequest struct {
+	ID Identifier
+}
+
 // ContextKey - this is a type which is used as keys for the context
 type ContextKey uint64
 
