@@ -292,7 +292,6 @@ func main() {
 			log.Printf("ERR: %v", err)
 		}
 
-		log.Printf("performing get")
 		resp, err = t.RoundTrip(&protocol.Request{
 			Header: protocol.Header{
 				Type: protocol.UserType,
@@ -305,13 +304,15 @@ func main() {
 			log.Printf("Failed to round trip the successor request: %v", err)
 			return
 		}
-		log.Printf("done get")
+		if resp.Status == protocol.Error {
+			log.Printf("failed to get resource requested.")
+			return
+		}
 
 		err = ioutil.WriteFile(filedest, resp.Data, 0644)
 		if err != nil {
 			log.Println(err)
 			return
 		}
-		log.Println("done")
 	}
 }
