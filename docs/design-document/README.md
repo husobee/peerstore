@@ -393,27 +393,34 @@ between users and nodes, as well as nodes to nodes.
 
 In order to have authentication, a peer needs to inform other peers of it's
 existence as well as some mechanism to prove in future interactions that the
-user is who they say.  In order to achieve this feat we will be adding a node
+node is who they say.  In order to achieve this feat we will be adding a node
 "Registration" operation, which will take a public key, and the node's
 identifier through an RPC call.
 
-The node by which the new node is registering will then take this public key and
-perform a "Store Registration" operation which will merely store the public key
-to the DHT with the Key of the node that is attempting to register.
+The node registration consists process will create a web of trust between the
+nodes.  Given a node (N1) wishing to register with another node (N2), N1 will
+package up it's own public key, as well as it's identifier and contact address.
+At this point N2 will generate a list of other nodes (Nx) which N2 already knows
+about.  N2 will perform a SHA256 on N1's Public Key provided in the registration
+request.  N2 will then respond to N1 with the list (Nx) and the signature of
+the public key of N1 back to N1.
 
-This will allow us to store the public key of the new node in the DHT for other
-nodes and users to access.
+At this point N1 will be required to contact all of the nodes Nx and inform them
+of N1's wishes to be trusted through a NodeTrust method.  For each Nx, N1 will
+present Nx with the signature of the N1's public key, and N1's public key.
+
+At this point Nx will verify N2's signature on N1's public key, and accept N1 as
+a trusted node.  Nx will then respond to N1 with a list of nodes that Nx knows of
+(Ny) as well as a signature of N1's public key.  N1 upon recieving the response
+will contact all nodes in Ny for NodeTrust.
+
+This way all of the nodes in the cluster will add registering nodes to a trusted
+nodes list, and maintain the trust with new nodes that are entering.
 
 Below is the high level use case diagram outlining the particulars of the peer
-registration process by which peers store their public key's within the DHT.
+registration process by which peers store their public key's within the each node.
 
 ![Peer Registration Use Case](./Milestone2/NodeRegistrationUseCaseDiagram.png)
-
-As you can see the registration process is at it's simplest the generation of
-key pairs, and the storage of said key pairs in the DHT.  This will allow other
-nodes and users the ability to find the node's public key in order to validate
-signatures for proving authenticity as well as encrypting traffic to particular
-nodes for communications.
 
 You may also note that all peer to peer communications, other than registration,
 have now been updated to include a "from" id and a "signature" field in the
@@ -435,9 +442,9 @@ DHT:
 
 ![User Registration Use Case](./Milestone2/UserRegistrationUseCaseDiagram.png)
 
-Since we are following the same registration convention exactly that new nodes
+Since we are following a similar registration convention that new nodes
 use for registration, we are able to benefit from re-use.  We are storing user's
-public keys in the DHT the same way we store the node's public keys.
+public keys in the DHT.
 
 We are also re-using the same "from" id and "signature" field in the message
 header for all requests, in order to identify and authenticate users.
@@ -478,6 +485,8 @@ in a new encrypted message type which will consist of the following attributes:
     * this will be the AES initialization vector used in CBC mode.
 3. Ciphertext
     * this will be the encrypted version of the peerstore protocol message
+3. Signature
+    * this is the RSA signature of a hash of the payload
 
 Below is the high level use case diagram outlining the particulars of the
 transport encryption process:
@@ -519,14 +528,12 @@ encryption/decryption, signature validation and session key decryption.
 The new server flow is now as follows:
 1. Using public key crypto, decrypt the Session Key with server's private key
 2. Using the Initialization Vector, and decrypted Session Key, decrypt Ciphertext
-3. Validate the payload of the Plaintext by performing a hash on the decrypted
-Ciphertext and comparing to the Hash field
+3. Validate the payload of the Plaintext by performing an RSA signature validation
+on a hash of decrypted Ciphertext and comparing it to the signature in the request
 4. Attempt to decode the peer protocol message and process as plaintext
 
 With this small processing pipeline change, we are able to secure the existing
 message protocol with minimal changes, using the web of trust the DHT has built.
-
-### Discussion (Specification)
 
 #### Sample Build
 
@@ -535,7 +542,18 @@ such as `make linux`
 
 #### Running Notes
 
-Starting a peerstore server:
+Starting a single peerstore server with no peers:
+
+```
+./release/peerstore_server-latest-linux-amd64 -initialPeerAddr :3000 -addr :3001 -dataPath .peerstore/3001 -logtostderr
+```
+
+Starting another peerstore server with a peer:
+```
+./release/peerstore_server-latest-linux-amd64 -initialPeerAddr :3001 -addr :3002 -dataPath .peerstore/3002 -logtostderr -initialPeerKeyFile .peerstore/3001/publickey.pem
+```
+
+Server Notes:
 
 Starting the peerstore server the first time will generate a keypair on startup
 during the registration process.  If there is already a keypair in the -dataPath
@@ -543,12 +561,53 @@ specified directory that keypair will be used.  These keypairs are how the
 session key is decrypted in order to accept any communications as well as how
 messages are signed by the peer.
 
+Also note there is a new flag, `initialPeerKeyFile` which is the public key file
+of the peer's keypair.  The peers work in a web of trust, so, on start up, the
+node will obviously trust itself.  Given a peer public key file, the peer will
+also default trust that peer.
+
+Peers have a registration process, so when the second peer registers to the first
+peer the first peer will sign the public key of the second peer and send that
+as well as a list of all known peers back in the response.
+
+It is the registering peer's job to connect to each of the other nodes and perform
+a node trust process.  This process involves sending a request to the peer, which
+contains the signature from the original registrant node.
+
+This is how all of the nodes can be authenticated with each other in a web of trust.
+
+
 Starting the peerstore client:
 
-It is important to understand that running the peerstore client will attempt to
-create a `.peerstore-client` directory within the home directory of the user
-who is attempting to run the client.  Within this location is where the user
-public and private keys are stored for use by the client in registration.
+Performing a backup of a directory:
+```
+./release/peerstore_client-latest-linux-amd64 -peerAddr :3001 -localPath ~/peerstore/ -operation backup -peerKeyFile .peerstore/3001/publickey.pem  -selfKeyFile .peerstore/user1.pem
+```
+
+Note that we added two flags to the client.  First flag is `peerKeyFile` and this
+is the public key of a node in the cluster.  This is required for securing the
+communications between the "user" and the node.  The second flag is `selfKeyFile`
+which is this particular user's public and private key file in PEM format.
+
+This key file *IS* the identity of the user.  If you perform actions with one PEM
+file and try to perform getfile actions with a different PEM file, you will not
+be able to, as the authentication of users is tied to the RSA keys.
+
+To test it out, perform the following:
+
+```
+# backup a directory
+./release/peerstore_client-latest-linux-amd64 -peerAddr :3001 -localPath ~/peerstore/ -operation backup -peerKeyFile .peerstore/3001/publickey.pem  -selfKeyFile .peerstore/user1.pem
+# try to get a file from the directory
+./release/peerstore_client-latest-linux-amd64 -filedest ~/test.txt.restored -peerAddr :3001 -filename ~/peerstore/test.txt -operation getfile -peerKeyFile .peerstore/3001/publickey.pem -selfKeyFile .peerstore/user1.pem
+# now try to get a file with another "user's" key file
+./release/peerstore_client-latest-linux-amd64 -filedest ~/test.txt.restored -peerAddr :3001 -filename ~/peerstore/test.txt -operation getfile -peerKeyFile .peerstore/3001/publickey.pem -selfKeyFile .peerstore/user2.pem
+
+```
+
+You will notice that if the `selfKeyFile` already exists, the client will use
+the existing key file, if it doesn't exist, it will be created for you.
+
 
 ### Dependencies
 
