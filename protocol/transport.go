@@ -97,6 +97,8 @@ type Header struct {
 	Signature    []byte
 	DataLength   uint64
 	ResourceName string
+	Log          bool
+	Clock        uint64
 }
 
 // Validate - Implement validate for the header validation

@@ -23,6 +23,7 @@ func GetTransactionLog(thisID models.Identifier, peer models.Node, userKey *rsa.
 	if err != nil {
 		glog.Error("ERR: %v", err)
 	}
+	defer t.Close()
 
 	var buf = new(bytes.Buffer)
 	enc := gob.NewEncoder(buf)
@@ -44,9 +45,6 @@ func GetTransactionLog(thisID models.Identifier, peer models.Node, userKey *rsa.
 		return models.TransactionLog{}, errors.Wrap(err, "failed to get successor: ")
 	}
 
-	// close our connection
-	t.Close()
-
 	// populate our peer to get the log
 	var node = models.Node{}
 	dec := gob.NewDecoder(bytes.NewBuffer(resp.Data))
@@ -63,7 +61,7 @@ func GetTransactionLog(thisID models.Identifier, peer models.Node, userKey *rsa.
 	if err != nil {
 		log.Printf("ERR: %v", err)
 	}
-
+	defer st.Close()
 	resp, err = st.RoundTrip(&protocol.Request{
 		Header: protocol.Header{
 			Type: protocol.NodeType,
@@ -76,9 +74,6 @@ func GetTransactionLog(thisID models.Identifier, peer models.Node, userKey *rsa.
 		log.Printf("Failed to round trip the get file request: %v", err)
 		return models.TransactionLog{}, errors.Wrap(err, "failed to get file")
 	}
-
-	// close our connection
-	st.Close()
 
 	if resp.Status == protocol.Error {
 		log.Printf("failed to get resource requested.")

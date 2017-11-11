@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rsa"
 	"io"
+	"strings"
 
 	"github.com/golang/glog"
 	"github.com/husobee/peerstore/models"
@@ -95,32 +96,43 @@ func PostFileHandler(ctx context.Context, r *protocol.Request) protocol.Response
 		}
 	}
 
-	// TODO: Lookup the user transaction log resource in the DHT
-	// Load the transaction log into a transaction log struct
-	tl, err := GetTransactionLog(selfID, selfNode, userPubKey, selfKey)
-	if err != nil {
-		glog.Error("error getting transaction log: ", err)
-		return protocol.Response{
-			Status: protocol.Error,
+	var timestamp = models.IncrementClock(r.Header.Clock)
+	if r.Header.Log {
+		// TODO: Lookup the user transaction log resource in the DHT
+		// Load the transaction log into a transaction log struct
+		tl, err := GetTransactionLog(selfID, selfNode, userPubKey, selfKey)
+		if err != nil {
+			glog.Error("error getting transaction log: ", err)
+			if !strings.Contains(err.Error(), "failed to get file, protocol error") {
+				return protocol.Response{
+					Status: protocol.Error,
+				}
+			}
 		}
-	}
 
-	// Add an item to the transaction log 'UPDATE'
-	tl = append(tl, models.TransactionEntity{
-		Operation:    models.UpdateOperation,
-		ResourceName: resourceName,
-		ResourceID:   r.Header.Key})
+		// Add an item to the transaction log 'UPDATE'
+		tl = append(tl, models.TransactionEntity{
+			Operation:    models.UpdateOperation,
+			ResourceName: resourceName,
+			ResourceID:   r.Header.Key,
+			ClientID:     r.Header.From,
+			Timestamp:    timestamp,
+		})
 
-	// Upload the serialized transaction log to the DHT
-	err = PutTransactionLog(selfID, selfNode, userPubKey, selfKey, tl)
-	if err != nil {
-		glog.Error("error putting transaction log: ", err)
-		return protocol.Response{
-			Status: protocol.Error,
+		// Upload the serialized transaction log to the DHT
+		err = PutTransactionLog(selfID, selfNode, userPubKey, selfKey, tl)
+		if err != nil {
+			glog.Error("error putting transaction log: ", err)
+			return protocol.Response{
+				Status: protocol.Error,
+			}
 		}
 	}
 
 	return protocol.Response{
+		Header: protocol.Header{
+			Clock: timestamp,
+		},
 		Status: protocol.Success,
 	}
 }
@@ -175,32 +187,44 @@ func DeleteFileHandler(ctx context.Context, r *protocol.Request) protocol.Respon
 		}
 	}
 
-	// TODO: Lookup the user transaction log resource in the DHT
-	// Load the transaction log into a transaction log struct
-	tl, err := GetTransactionLog(selfID, selfNode, userPubKey, selfKey)
-	if err != nil {
-		glog.Error("error getting transaction log: ", err)
-		return protocol.Response{
-			Status: protocol.Error,
+	var timestamp = models.IncrementClock(r.Header.Clock)
+	if r.Header.Log {
+		// TODO: Lookup the user transaction log resource in the DHT
+		// Load the transaction log into a transaction log struct
+		tl, err := GetTransactionLog(selfID, selfNode, userPubKey, selfKey)
+		if err != nil {
+			glog.Error("error getting transaction log: ", err)
+			if !strings.Contains(err.Error(), "failed to get file, protocol error") {
+				return protocol.Response{
+					Status: protocol.Error,
+				}
+			}
 		}
-	}
 
-	// Add an item to the transaction log 'UPDATE'
-	tl = append(tl, models.TransactionEntity{
-		Operation:    models.DeleteOperation,
-		ResourceName: resourceName,
-		ResourceID:   r.Header.Key})
+		// Add an item to the transaction log 'UPDATE'
+		// Add an item to the transaction log 'UPDATE'
+		tl = append(tl, models.TransactionEntity{
+			Operation:    models.UpdateOperation,
+			ResourceName: resourceName,
+			ResourceID:   r.Header.Key,
+			ClientID:     r.Header.From,
+			Timestamp:    timestamp,
+		})
 
-	// Upload the serialized transaction log to the DHT
-	err = PutTransactionLog(selfID, selfNode, userPubKey, selfKey, tl)
-	if err != nil {
-		glog.Error("error putting transaction log: ", err)
-		return protocol.Response{
-			Status: protocol.Error,
+		// Upload the serialized transaction log to the DHT
+		err = PutTransactionLog(selfID, selfNode, userPubKey, selfKey, tl)
+		if err != nil {
+			glog.Error("error putting transaction log: ", err)
+			return protocol.Response{
+				Status: protocol.Error,
+			}
 		}
 	}
 
 	return protocol.Response{
+		Header: protocol.Header{
+			Clock: timestamp,
+		},
 		Status: protocol.Success,
 	}
 }

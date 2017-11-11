@@ -11,6 +11,29 @@ import (
 	"github.com/pkg/errors"
 )
 
+var (
+	// lamport clock for partial ordering assistance in transaction log
+	clock   uint64 = 1
+	clockMu        = &sync.RWMutex{}
+)
+
+func GetClock() uint64 {
+	clockMu.RLock()
+	defer clockMu.RUnlock()
+	return clock
+}
+
+func IncrementClock(base uint64) uint64 {
+	clockMu.Lock()
+	defer clockMu.Unlock()
+	if clock < base {
+		clock = base + 1
+	} else {
+		clock = clock + 1
+	}
+	return clock
+}
+
 func init() {
 	gob.Register(SuccessorRequest{})
 	gob.Register(TransactionLog{})
@@ -28,6 +51,8 @@ type TransactionEntity struct {
 	Operation    TransactionOperation
 	ResourceName string
 	ResourceID   Identifier
+	ClientID     Identifier
+	Timestamp    uint64
 }
 
 // TransactionLog - a list of TransactionEntities
