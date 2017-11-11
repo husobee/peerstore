@@ -70,6 +70,17 @@ func validateParams() error {
 		if !info.IsDir() {
 			return errors.New("localPath must be a valid directory")
 		}
+	} else if operation == "sync" {
+		if localPath == "" {
+			return errors.New("localPath must be set")
+		}
+		info, err := os.Stat(localPath)
+		if err != nil {
+			return errors.Wrap(err, "error attempting to validate localPath: ")
+		}
+		if !info.IsDir() {
+			return errors.New("localPath must be a valid directory")
+		}
 	} else if operation == "getfile" {
 		if filedest == "" {
 			return errors.New("filedest must be set")
@@ -161,6 +172,14 @@ func main() {
 	log.Printf("response: %+v", resp)
 
 	switch operation {
+	case "sync":
+		// TODO: need to kickoff a lookup to the transaction log in the DHT
+		// if there is a transaction log, we need to perform a get on all the
+		// resources that are listed in the transaction log and update our
+		// transaction log
+		// TODO: need to kick off an fsnotify to watch for changes to files
+		// (except when we make changes from the sync)
+
 	case "backup":
 		var walkFn = func(path string, fi os.FileInfo, err error) error {
 			if !fi.IsDir() {

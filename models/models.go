@@ -13,7 +13,25 @@ import (
 
 func init() {
 	gob.Register(SuccessorRequest{})
+	gob.Register(TransactionLog{})
 }
+
+type TransactionOperation int
+
+const (
+	UpdateOperation TransactionOperation = iota
+	DeleteOperation
+)
+
+// TransactionEntity - a record of a transaction
+type TransactionEntity struct {
+	Operation    TransactionOperation
+	ResourceName string
+	ResourceID   Identifier
+}
+
+// TransactionLog - a list of TransactionEntities
+type TransactionLog []TransactionEntity
 
 // SuccessorRequest - this is the chord successor request strurture, the ID
 // is the key we are looking to find a successor for.

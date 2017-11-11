@@ -88,6 +88,12 @@ func PostFileHandler(ctx context.Context, r *protocol.Request) protocol.Response
 			Status: protocol.Error,
 		}
 	}
+
+	// TODO: Lookup the user transaction log resource in the DHT
+	// Load the transaction log into a transaction log struct
+	// Add an item to the transaction log 'UPDATE'
+	// Upload the serialized transaction log to the DHT
+
 	return protocol.Response{
 		Status: protocol.Success,
 	}
@@ -137,6 +143,12 @@ func DeleteFileHandler(ctx context.Context, r *protocol.Request) protocol.Respon
 			Status: protocol.Error,
 		}
 	}
+
+	// TODO: Lookup the user transaction log resource in the DHT
+	// Load the transaction log into a transaction log struct
+	// Add an item to the transaction log 'DELETE'
+	// Upload the serialized transaction log to the DHT
+
 	return protocol.Response{
 		Status: protocol.Success,
 	}
