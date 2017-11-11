@@ -679,6 +679,20 @@ diagram describing the scheme:
 
 ![Node Transaction Log Use Case](./Milestone3/NodeTransactionLogUseCaseDiagram.png)
 
+In order to have relative timing in the transaction log I have implemented a 
+simple lamport clock.  In a distributed system you cannot rely on computer clocks
+to be synchronized across nodes.  For that reason I chose to use a lamport clock
+which is effectively a distributed counter.  When a client attempts to write a
+file to the DHT, there is a new request header called "Clock".  The client will
+populate this header with it's global counter.  The node will then check it's 
+global counter, and will respond to the client with the greater of the two
+counters, plus one, which will be stored in the transaction log with that
+transaction.  With this in place we can clearly demonstrate which file
+operations happened in the correct order across clients.  If the client is
+disconnected from the network and file operations occur, the local transaction
+log will have a zero as the clock time, an indicator to retry those operations
+when the network becomes available.
+
 #### Client Transaction Log Implementation
 
 A client will poll on a determined interval the transaction log for the user.
