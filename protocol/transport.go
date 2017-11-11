@@ -88,14 +88,15 @@ const (
 // the peerstore version, the key (if applicable), from and to nodes
 // and the length of the data in the data section of the message.
 type Header struct {
-	Key        models.Identifier
-	From       models.Identifier
-	FromAddr   string
-	Type       CallerType
-	PubKey     *rsa.PublicKey
-	SignedBy   models.Identifier
-	Signature  []byte
-	DataLength uint64
+	Key          models.Identifier
+	From         models.Identifier
+	FromAddr     string
+	Type         CallerType
+	PubKey       *rsa.PublicKey
+	SignedBy     models.Identifier
+	Signature    []byte
+	DataLength   uint64
+	ResourceName string
 }
 
 // Validate - Implement validate for the header validation

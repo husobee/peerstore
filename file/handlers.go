@@ -3,6 +3,7 @@ package file
 import (
 	"bytes"
 	"context"
+	"crypto/rsa"
 	"io"
 
 	"github.com/golang/glog"
@@ -79,6 +80,11 @@ func GetFileHandler(ctx context.Context, r *protocol.Request) protocol.Response 
 // PostFileHandler - This is the server handler which manages Post File Requests
 func PostFileHandler(ctx context.Context, r *protocol.Request) protocol.Response {
 	var dataPath = ctx.Value(models.DataPathContextKey).(string)
+	var selfKey = ctx.Value(models.SelfPrivateKeyContextKey).(*rsa.PrivateKey)
+	var selfID = ctx.Value(models.SelfIDContextKey).(models.Identifier)
+	var selfNode = ctx.Value(models.SelfNodeContextKey).(models.Node)
+	var userPubKey = ctx.Value(models.UserPublicKeyContextKey).(*rsa.PublicKey)
+	var resourceName = ctx.Value(models.ResourceNameContextKey).(string)
 	// add the request owner id to the file "header"
 	if err := Post(
 		dataPath, r.Header.Key, bytes.NewBuffer(append(r.Header.From[:], r.Data...)),
@@ -91,8 +97,28 @@ func PostFileHandler(ctx context.Context, r *protocol.Request) protocol.Response
 
 	// TODO: Lookup the user transaction log resource in the DHT
 	// Load the transaction log into a transaction log struct
+	tl, err := GetTransactionLog(selfID, selfNode, userPubKey, selfKey)
+	if err != nil {
+		glog.Error("error getting transaction log: ", err)
+		return protocol.Response{
+			Status: protocol.Error,
+		}
+	}
+
 	// Add an item to the transaction log 'UPDATE'
+	tl = append(tl, models.TransactionEntity{
+		Operation:    models.UpdateOperation,
+		ResourceName: resourceName,
+		ResourceID:   r.Header.Key})
+
 	// Upload the serialized transaction log to the DHT
+	err = PutTransactionLog(selfID, selfNode, userPubKey, selfKey, tl)
+	if err != nil {
+		glog.Error("error putting transaction log: ", err)
+		return protocol.Response{
+			Status: protocol.Error,
+		}
+	}
 
 	return protocol.Response{
 		Status: protocol.Success,
@@ -102,6 +128,11 @@ func PostFileHandler(ctx context.Context, r *protocol.Request) protocol.Response
 // DeleteFileHandler - This is the server handler which manages Delete File Requests
 func DeleteFileHandler(ctx context.Context, r *protocol.Request) protocol.Response {
 	var dataPath = ctx.Value(models.DataPathContextKey).(string)
+	var selfKey = ctx.Value(models.SelfPrivateKeyContextKey).(*rsa.PrivateKey)
+	var selfID = ctx.Value(models.SelfIDContextKey).(models.Identifier)
+	var selfNode = ctx.Value(models.SelfNodeContextKey).(models.Node)
+	var userPubKey = ctx.Value(models.UserPublicKeyContextKey).(*rsa.PublicKey)
+	var resourceName = ctx.Value(models.ResourceNameContextKey).(string)
 
 	// perform file get based on key
 	buf, err := Get(dataPath, r.Header.Key)
@@ -146,8 +177,28 @@ func DeleteFileHandler(ctx context.Context, r *protocol.Request) protocol.Respon
 
 	// TODO: Lookup the user transaction log resource in the DHT
 	// Load the transaction log into a transaction log struct
-	// Add an item to the transaction log 'DELETE'
+	tl, err := GetTransactionLog(selfID, selfNode, userPubKey, selfKey)
+	if err != nil {
+		glog.Error("error getting transaction log: ", err)
+		return protocol.Response{
+			Status: protocol.Error,
+		}
+	}
+
+	// Add an item to the transaction log 'UPDATE'
+	tl = append(tl, models.TransactionEntity{
+		Operation:    models.DeleteOperation,
+		ResourceName: resourceName,
+		ResourceID:   r.Header.Key})
+
 	// Upload the serialized transaction log to the DHT
+	err = PutTransactionLog(selfID, selfNode, userPubKey, selfKey, tl)
+	if err != nil {
+		glog.Error("error putting transaction log: ", err)
+		return protocol.Response{
+			Status: protocol.Error,
+		}
+	}
 
 	return protocol.Response{
 		Status: protocol.Success,

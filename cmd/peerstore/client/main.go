@@ -236,11 +236,12 @@ func main() {
 				log.Println("starting request: ", protocol.PostFileMethod)
 				response, err := t.RoundTrip(&protocol.Request{
 					Header: protocol.Header{
-						Key:        key,
-						Type:       protocol.UserType,
-						From:       id,
-						DataLength: uint64(len(data)),
-						PubKey:     privateKey.Public().(*rsa.PublicKey),
+						Key:          key,
+						Type:         protocol.UserType,
+						From:         id,
+						DataLength:   uint64(len(data)),
+						PubKey:       privateKey.Public().(*rsa.PublicKey),
+						ResourceName: path,
 					},
 					Method: protocol.PostFileMethod,
 					Data:   data,

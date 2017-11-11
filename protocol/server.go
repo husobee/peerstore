@@ -56,16 +56,18 @@ func NewServer(key *rsa.PrivateKey, peer models.Node, address, dataPath string, 
 	if peer.Addr != "" {
 		trustedNodes[peer.ID] = peer
 	}
+	ctx := context.WithValue(context.Background(), models.DataPathContextKey, dataPath)
+	ctx = context.WithValue(ctx, models.NumRequestWorkerContextKey, numWorkers)
+	ctx = context.WithValue(ctx, models.SelfPrivateKeyContextKey, key)
+	ctx = context.WithValue(ctx, models.SelfIDContextKey, id)
+	ctx = context.WithValue(ctx, models.SelfNodeContextKey, trustedNodes[id])
 
 	return &Server{
-		PrivateKey: key,
-		listener:   listener,
-		id:         id,
-		addr:       address,
-		ctx: context.WithValue(
-			context.WithValue(
-				context.Background(), models.DataPathContextKey, dataPath),
-			models.NumRequestWorkerContextKey, numWorkers),
+		PrivateKey:   key,
+		listener:     listener,
+		id:           id,
+		addr:         address,
+		ctx:          ctx,
 		connChan:     make(chan net.Conn, bufferSize),
 		handlerMap:   make(map[RequestMethod]Handler),
 		handlerMapMu: new(sync.RWMutex),
@@ -226,6 +228,9 @@ Outer:
 		s.handlerMapMu.RLock()
 		handler, ok := s.handlerMap[request.Method]
 		s.handlerMapMu.RUnlock()
+		s.ctx = context.WithValue(s.ctx, models.UserPublicKeyContextKey, em.Header.PubKey)
+		s.ctx = context.WithValue(s.ctx, models.ResourceNameContextKey, request.Header.ResourceName)
+
 		if ok {
 			// based on the type, we are going to authenticate this request
 			glog.Infof("header type is: %d", em.Header.Type)

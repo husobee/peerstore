@@ -54,6 +54,12 @@ const (
 	ValidOwnerFunctionContextKey
 	// RequestFileOwnerIDContextKey - The request "from" field
 	RequestFileOwnerIDContextKey
+
+	SelfPrivateKeyContextKey
+	SelfIDContextKey
+	SelfNodeContextKey
+	UserPublicKeyContextKey
+	ResourceNameContextKey
 )
 
 func init() {
