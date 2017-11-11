@@ -1,0 +1,13 @@
+@startuml
+
+
+Client -> (File Operation Handler)
+
+Node <- (File Operation Handler)
+(File Operation Handler) <.. (Lookup User Transaction Log)
+(File Operation Handler) <.. (Add Write Operation to Transaction Log)
+(File Operation Handler) <.. (Write Transaction Log)
+
+
+@enduml
+

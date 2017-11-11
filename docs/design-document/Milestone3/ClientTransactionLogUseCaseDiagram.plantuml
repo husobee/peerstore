@@ -1,0 +1,16 @@
+@startuml
+
+Client -> (Poll for Transaction Log)
+
+(Poll for Transaction Log) <.. (Lookup Transaction Log Address)
+(Poll for Transaction Log) <.. (Download Transaction Log)
+(Poll for Transaction Log) <.. (Update Resources)
+
+(Update Resources) <.. (Lookup Resource Address)
+(Update Resources) <.. (Download Resource)
+
+
+Client -> (Watch for File Changes)
+(Watch for File Changes) <.. (Upload Changed Resources)
+
+@enduml

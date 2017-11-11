@@ -632,3 +632,141 @@ standard library dependencies and version pin them to a working version.
 
  - [Golang Documentation](https://golang.org/doc/)
 
+
+
+
+## Milestone 3 - Across Client File Synchronization
+
+
+The key objective of this milestone is to add support for cross client file
+synchronization.  In order to support this feature the following implementation
+items need to be achieved:
+
+1. A user based resource transaction log, capturing:
+  * Any resource additions/deletions/changes to a resource belonging to a user
+2. Converting the Client into a daemon:
+  * Which polls on a periodic interval the remote transaction log
+  * Compares the resource transaction log with the current local state
+  * Updates the local file state based on the transaction changes
+
+The remote transaction log will be the source of truth for all changes to the
+resources which are stored in the DHT.  Said transaction log will be addressable
+within the DHT as well, allowing any node/client the ability to access the
+transactions that are performed.
+
+
+
+### Use Cases
+
+There are two distinct use cases that need to be addressed within the system:
+
+1. Nodes must be able to find and manipulate the transaction log
+2. Clients must be able to find the transaction log and pull required resources
+
+#### Transaction Log Manipulation
+
+For nodes to find the transaction log, the DHT addressing scheme will be similar
+to how nodes are able to find the public key for clients.  The transaction log
+address will be a concatination of the user's public key, and the word
+`-transaction-log`, which will be hashed using the SHA1 hashing function.  With
+this consistent naming convention the nodes will be able to deterministically
+compute the address of the transaction log for a user, which will allow them to
+perform a lookup in the DHT for the transaction log resource.  This transaction
+log resource will have the same operations as every other resource within the
+system, allowing any node to update the transaction log.  Below is a use case
+diagram describing the scheme:
+
+
+![Node Transaction Log Use Case](./Milestone3/NodeTransactionLogUseCaseDiagram.png)
+
+#### Client Transaction Log Implementation
+
+A client will poll on a determined interval the transaction log for the user.
+The client will deterministically compute the address of the transaction log the
+same way a node will, in order to figure out the node which houses the
+transaction log for that user.
+
+A client will have a local transaction log that will mirror the remote
+transaction log.  Initially the local transaction log will be empty, until that
+transaction log is polled from the server.  At this point the client will
+attempt to pull the current state of each resource defined within the remote
+transaction log.  Below is a use case diagram describing this scheme:
+
+![Client Transaction Log Use Case](./Milestone3/ClientTransactionLogUseCaseDiagram.png)
+
+
+### Component Architectures
+
+#### File Package
+
+The file package will be slightly altered in order to support this change.
+Within each file handler operation, the file package will need to lookup the
+transaction log, and alter the transaction log with the operation that was
+performed.  The transaction log will consist of a `gob` encoded array which
+consists of the following elements:
+
+* Operation
+* Resource Name
+* Resource ID
+
+The operation will say what operation happened (UPDATE or DELETE), the resource
+name will be the string representation of the resource which is the filename and
+path of said resource, and resource ID is the identifier in the DHT of the
+resource in order to pull the resource.
+
+#### Sample Build
+
+To build, you run `make release` or if you want a particular result, you can specify
+such as `make linux`
+
+#### Running Notes
+
+Starting a single peerstore server with no peers:
+
+There is no change in how to start the server from Milestone 2.  Please refer to
+the Milestone 2 documentation in order to start the server.
+
+
+Starting the peerstore client:
+
+There is significant changes to the client in the Milestone, primarily due to
+the watching of file changes on the filesystem, and the polling required to keep
+the client up to date.
+
+The client now runs as a daemon when the `sync` operation is given:
+
+```
+# backup and synchronize a directory
+./release/peerstore_client-latest-linux-amd64 -peerAddr :3001 -localPath ~/peerstore/ -operation sync -peerKeyFile .peerstore/3001/publickey.pem  -selfKeyFile .peerstore/user1.pem
+```
+
+When this command is run the client will run in a daemon mode.  On startup the
+client will poll for any transaction that relate to any files within the
+`localPath`, and if there are resources within this localPath the client will
+pull those resources from the DHT and place them in the `localPath`.
+
+The client now uses a file system watcher to watch for any file changes within
+`localPath` and will send the file changes to the DHT.
+
+In order to run, I suggest running the above command in one terminal window, and
+then changing the files on the filesystem in another command window.
+
+### Dependencies
+
+The dependencies used for this project are as follows, followed by a brief
+explanation as to why, and how the help.
+
+- [go-fsnotify/fsnotify](https://github.com/fsnotify/fsnotify)
+    - This package is used by the client to watch for any file system changes
+    within the localPath in order to push changes to the DHT
+
+For dependency management we are using the golang tool `dep` which has stores a
+manifest in the repository "GoPkg.toml" which will keep track of all the non
+standard library dependencies and version pin them to a working version.
+
+
+### Resources
+
+ - [Golang Documentation](https://golang.org/doc/)
+
+
