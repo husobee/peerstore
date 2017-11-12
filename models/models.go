@@ -48,15 +48,19 @@ const (
 
 // TransactionEntity - a record of a transaction
 type TransactionEntity struct {
-	Operation    TransactionOperation
 	ResourceName string
 	ResourceID   Identifier
-	ClientID     Identifier
-	Timestamp    uint64
+	Entries      []TransactionEntry
+}
+
+type TransactionEntry struct {
+	Operation TransactionOperation
+	ClientID  Identifier
+	Timestamp uint64
 }
 
 // TransactionLog - a list of TransactionEntities
-type TransactionLog []TransactionEntity
+type TransactionLog map[string]TransactionEntity
 
 // SuccessorRequest - this is the chord successor request strurture, the ID
 // is the key we are looking to find a successor for.

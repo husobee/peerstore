@@ -93,7 +93,11 @@ func GetTransactionLog(thisID models.Identifier, peer models.Node, userKey *rsa.
 
 func PutTransactionLog(thisID models.Identifier, peer models.Node, userKey *rsa.PublicKey, selfKey *rsa.PrivateKey, transactionLog models.TransactionLog) error {
 	gobKey, _ := crypto.GobEncodePublicKey(userKey)
+	glog.Infof("userKey bytes: %x", userKey)
+	glog.Infof("gobKey bytes: %x", gobKey)
 	id := models.Identifier(sha1.Sum(append(gobKey, []byte("-transaction-log")...)))
+
+	glog.Infof("Trying to PUT Transaction LOG, ID: %x", id)
 
 	// create a connection to our peer
 	t, err := protocol.NewTransport("tcp", peer.Addr, protocol.NodeType, id, peer.PublicKey, selfKey)
@@ -149,7 +153,7 @@ func PutTransactionLog(thisID models.Identifier, peer models.Node, userKey *rsa.
 
 	// send the file over
 	glog.Info("starting request: ", protocol.PostFileMethod)
-	response, err := t.RoundTrip(&protocol.Request{
+	request := &protocol.Request{
 		Header: protocol.Header{
 			Key:        id,
 			Type:       protocol.NodeType,
@@ -159,12 +163,15 @@ func PutTransactionLog(thisID models.Identifier, peer models.Node, userKey *rsa.
 		},
 		Method: protocol.PostFileMethod,
 		Data:   logBuf.Bytes(),
-	})
+	}
+	glog.Info("!!!!!!!!!!!!!!!!! PUT TRANSACTION LOG !!!!!!!!!!!! Request: %+v\n", request)
+
+	response, err := t.RoundTrip(request)
 	if err != nil {
 		glog.Error("ERR: %v\n", err)
 		return errors.Wrap(err, "failed serialize transaction log: ")
 	}
-	log.Printf("Response: %+v\n", response)
+	glog.Info("!!!!!!!!!!!!!!!!! PUT TRANSACTION LOG !!!!!!!!!!!! Response: %+v\n", response)
 
 	st.Close()
 	return nil

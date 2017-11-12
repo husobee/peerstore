@@ -3,22 +3,27 @@ package file
 import (
 	"bytes"
 	"context"
-	"crypto/rsa"
 	"io"
-	"strings"
+	"sync"
 
 	"github.com/golang/glog"
 	"github.com/husobee/peerstore/models"
 	"github.com/husobee/peerstore/protocol"
 )
 
+var fileMu = &sync.Mutex{}
+
 // GetFileHandler - This is the server handler which manages Get File Requests
 func GetFileHandler(ctx context.Context, r *protocol.Request) protocol.Response {
 	var dataPath = ctx.Value(models.DataPathContextKey).(string)
 
+	glog.Infof("GetFileHandler Request: %v, %x", r.Header.ResourceName, r.Header.Key)
+
 	var response = protocol.Response{
 		Status: protocol.Success,
 	}
+	fileMu.Lock()
+	defer fileMu.Unlock()
 	// perform file get based on key
 	buf, err := Get(dataPath, r.Header.Key)
 	defer buf.Close()
@@ -75,18 +80,16 @@ func GetFileHandler(ctx context.Context, r *protocol.Request) protocol.Response 
 			}
 		}
 	}
+	glog.Infof("!!!!!!!!!!!!!!!!!!!!! GET FILE response: !!!!!!!!!!! %s", string(response.Data))
 	return response
 }
 
 // PostFileHandler - This is the server handler which manages Post File Requests
 func PostFileHandler(ctx context.Context, r *protocol.Request) protocol.Response {
 	var dataPath = ctx.Value(models.DataPathContextKey).(string)
-	var selfKey = ctx.Value(models.SelfPrivateKeyContextKey).(*rsa.PrivateKey)
-	var selfID = ctx.Value(models.SelfIDContextKey).(models.Identifier)
-	var selfNode = ctx.Value(models.SelfNodeContextKey).(models.Node)
-	var userPubKey = ctx.Value(models.UserPublicKeyContextKey).(*rsa.PublicKey)
-	var resourceName = ctx.Value(models.ResourceNameContextKey).(string)
 	// add the request owner id to the file "header"
+	fileMu.Lock()
+	defer fileMu.Unlock()
 	if err := Post(
 		dataPath, r.Header.Key, bytes.NewBuffer(append(r.Header.From[:], r.Data...)),
 	); err != nil {
@@ -96,38 +99,9 @@ func PostFileHandler(ctx context.Context, r *protocol.Request) protocol.Response
 		}
 	}
 
+	glog.Infof("!!!!!!!!!!!!!!!!!!!!! POST FILE request: !!!!!!!!!!! %s", string(r.Data))
+
 	var timestamp = models.IncrementClock(r.Header.Clock)
-	if r.Header.Log {
-		// TODO: Lookup the user transaction log resource in the DHT
-		// Load the transaction log into a transaction log struct
-		tl, err := GetTransactionLog(selfID, selfNode, userPubKey, selfKey)
-		if err != nil {
-			glog.Error("error getting transaction log: ", err)
-			if !strings.Contains(err.Error(), "failed to get file, protocol error") {
-				return protocol.Response{
-					Status: protocol.Error,
-				}
-			}
-		}
-
-		// Add an item to the transaction log 'UPDATE'
-		tl = append(tl, models.TransactionEntity{
-			Operation:    models.UpdateOperation,
-			ResourceName: resourceName,
-			ResourceID:   r.Header.Key,
-			ClientID:     r.Header.From,
-			Timestamp:    timestamp,
-		})
-
-		// Upload the serialized transaction log to the DHT
-		err = PutTransactionLog(selfID, selfNode, userPubKey, selfKey, tl)
-		if err != nil {
-			glog.Error("error putting transaction log: ", err)
-			return protocol.Response{
-				Status: protocol.Error,
-			}
-		}
-	}
 
 	return protocol.Response{
 		Header: protocol.Header{
@@ -140,11 +114,8 @@ func PostFileHandler(ctx context.Context, r *protocol.Request) protocol.Response
 // DeleteFileHandler - This is the server handler which manages Delete File Requests
 func DeleteFileHandler(ctx context.Context, r *protocol.Request) protocol.Response {
 	var dataPath = ctx.Value(models.DataPathContextKey).(string)
-	var selfKey = ctx.Value(models.SelfPrivateKeyContextKey).(*rsa.PrivateKey)
-	var selfID = ctx.Value(models.SelfIDContextKey).(models.Identifier)
-	var selfNode = ctx.Value(models.SelfNodeContextKey).(models.Node)
-	var userPubKey = ctx.Value(models.UserPublicKeyContextKey).(*rsa.PublicKey)
-	var resourceName = ctx.Value(models.ResourceNameContextKey).(string)
+	fileMu.Lock()
+	defer fileMu.Unlock()
 
 	// perform file get based on key
 	buf, err := Get(dataPath, r.Header.Key)
@@ -182,44 +153,13 @@ func DeleteFileHandler(ctx context.Context, r *protocol.Request) protocol.Respon
 	}
 
 	if err := Delete(dataPath, r.Header.Key); err != nil {
+		glog.Infof("failed to delete")
 		return protocol.Response{
 			Status: protocol.Error,
 		}
 	}
 
 	var timestamp = models.IncrementClock(r.Header.Clock)
-	if r.Header.Log {
-		// TODO: Lookup the user transaction log resource in the DHT
-		// Load the transaction log into a transaction log struct
-		tl, err := GetTransactionLog(selfID, selfNode, userPubKey, selfKey)
-		if err != nil {
-			glog.Error("error getting transaction log: ", err)
-			if !strings.Contains(err.Error(), "failed to get file, protocol error") {
-				return protocol.Response{
-					Status: protocol.Error,
-				}
-			}
-		}
-
-		// Add an item to the transaction log 'UPDATE'
-		// Add an item to the transaction log 'UPDATE'
-		tl = append(tl, models.TransactionEntity{
-			Operation:    models.UpdateOperation,
-			ResourceName: resourceName,
-			ResourceID:   r.Header.Key,
-			ClientID:     r.Header.From,
-			Timestamp:    timestamp,
-		})
-
-		// Upload the serialized transaction log to the DHT
-		err = PutTransactionLog(selfID, selfNode, userPubKey, selfKey, tl)
-		if err != nil {
-			glog.Error("error putting transaction log: ", err)
-			return protocol.Response{
-				Status: protocol.Error,
-			}
-		}
-	}
 
 	return protocol.Response{
 		Header: protocol.Header{
