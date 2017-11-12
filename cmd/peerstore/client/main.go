@@ -15,12 +15,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fsnotify/fsnotify"
+	"github.com/dietsche/rfsnotify"
 	"github.com/golang/glog"
 	"github.com/husobee/peerstore/crypto"
 	"github.com/husobee/peerstore/models"
 	"github.com/husobee/peerstore/protocol"
 	"github.com/pkg/errors"
+	"gopkg.in/fsnotify.v1"
 )
 
 var (
@@ -195,7 +196,7 @@ func main() {
 
 		// TODO: need to kick off an fsnotify to watch for changes to files
 		// (except when we make changes from the sync)
-		watcher, err := fsnotify.NewWatcher()
+		watcher, err := rfsnotify.NewWatcher()
 		if err != nil {
 			log.Printf("failed to start fs watcher: %s", err)
 			os.Exit(1)
@@ -428,6 +429,10 @@ func Synchronize(clientID models.Identifier, localPath string, peer models.Node,
 	// pull transaction log
 	tl, err := GetTransactionLog(
 		clientID, peer, privateKey.Public().(*rsa.PublicKey), privateKey)
+
+	log.Printf("local transaction log: %+v", tl)
+	log.Printf("remote transaction log: %+v", tl)
+
 	if err != nil {
 		log.Printf("Error getting transaction log: %s", err)
 	}
@@ -438,9 +443,10 @@ func Synchronize(clientID models.Identifier, localPath string, peer models.Node,
 
 		if !fi.IsDir() {
 			log.Printf("file is: %s\n", path)
-			log.Printf("transaction log: %+v", tl)
+			log.Printf("path is: %s", path)
 			if _, ok := tl[path]; !ok {
 				// remote has never seen this one, post it
+				log.Printf("path does not exist in tl")
 				PostFile(clientID, path, peer, privateKey)
 			}
 		}
@@ -452,16 +458,12 @@ func Synchronize(clientID models.Identifier, localPath string, peer models.Node,
 
 	// now we need to go through the transaction log and pull any new
 	// resources, will omit resources we have already seen
-	var newClockBase uint64 = 0
 	for k, v := range tl {
 
 		lastEntry := v.Entries[0]
 		for i, _ := range v.Entries {
 			if v.Entries[i].Timestamp >= lastEntry.Timestamp {
 				lastEntry = v.Entries[i]
-			}
-			if lastEntry.Timestamp >= newClockBase {
-				newClockBase = lastEntry.Timestamp
 			}
 		}
 
@@ -471,7 +473,6 @@ func Synchronize(clientID models.Identifier, localPath string, peer models.Node,
 		if _, ok := oldTransactionLog[k]; !ok {
 			// not in our old transaction log, so we should get this thing
 			GetFile(clientID, k, peer, privateKey)
-			models.IncrementClock(newClockBase)
 			continue
 		}
 		oldLastEntry := oldTransactionLog[k].Entries[0]
@@ -489,21 +490,20 @@ func Synchronize(clientID models.Identifier, localPath string, peer models.Node,
 				log.Printf("remote says to delete, removing")
 				// remote says remove, so remove
 				os.Remove(filepath.Join(localPath, k))
-				models.IncrementClock(newClockBase)
 				continue
 			}
 			log.Printf("Fetch the updated resource!")
 			GetFile(clientID, k, peer, privateKey)
+		} else if oldLastEntry.Timestamp == lastEntry.Timestamp {
+			// do nothing!
 		} else {
 			// we have something locally that is newer.
 			if oldLastEntry.Operation == models.DeleteOperation {
 				DeleteFile(clientID, k, peer, privateKey)
-				models.IncrementClock(newClockBase)
 				continue
 			}
 			PostFile(clientID, k, peer, privateKey)
 		}
-		models.IncrementClock(newClockBase)
 	}
 	return tl, nil
 }
@@ -752,8 +752,6 @@ func DeleteFile(clientID models.Identifier, path string, peer models.Node, priva
 
 func GetTransactionLog(thisID models.Identifier, peer models.Node, userKey *rsa.PublicKey, selfKey *rsa.PrivateKey) (models.TransactionLog, error) {
 	gobKey, _ := crypto.GobEncodePublicKey(userKey)
-	log.Printf("userKey bytes: %x", userKey)
-	log.Printf("gobKey bytes: %x", gobKey)
 	id := models.Identifier(sha1.Sum(append(gobKey, []byte("-transaction-log")...)))
 
 	log.Printf("Trying to GET Transaction LOG, ID: %x", id)
@@ -906,60 +904,28 @@ func PutTransactionLog(thisID models.Identifier, peer models.Node, userKey *rsa.
 		Method: protocol.PostFileMethod,
 		Data:   logBuf.Bytes(),
 	}
-	glog.Info("!!!!!!!!!!!!!!!!! PUT TRANSACTION LOG !!!!!!!!!!!! Request: %+v\n", request)
 
 	response, err := st.RoundTrip(request)
+	models.IncrementClock(response.Header.Clock)
 	st.Close()
 	if err != nil {
 		glog.Error("ERR: %v\n", err)
 		return errors.Wrap(err, "failed serialize transaction log: ")
 	}
-	glog.Info("!!!!!!!!!!!!!!!!! PUT TRANSACTION LOG !!!!!!!!!!!! Response: %+v\n", response)
+	log.Printf("!!!!!!!!!!!!!!!!! PUT TRANSACTION LOG !!!!!!!!!!!! Response: %+v\n", response)
 
 	return nil
 
 }
 
-func AddWatchers(watcher *fsnotify.Watcher, basePath string) {
+func AddWatchers(watcher *rfsnotify.RWatcher, basePath string) {
 	// walk all subdirectories
 	// set the watcher to watch the localpath
-
-	var walkFn = func(path string, fi os.FileInfo, err error) error {
-		if fi.IsDir() {
-			log.Printf("watching for changes: %s", path)
-			err = watcher.Add(path)
-			if err != nil {
-				log.Printf("fs watcher failed to add localpath: %s", err)
-				os.Exit(1)
-			}
-		}
-		return nil
-	}
-
-	// Open up directory
-	// read each file, and send to peerAddr
-	filepath.Walk(localPath, walkFn)
-
+	watcher.AddRecursive(basePath)
 }
 
-func RemoveWatchers(watcher *fsnotify.Watcher, basePath string) {
+func RemoveWatchers(watcher *rfsnotify.RWatcher, basePath string) {
 	// walk all subdirectories
 	// set the watcher to watch the localpath
-
-	var walkFn = func(path string, fi os.FileInfo, err error) error {
-		if fi.IsDir() {
-			log.Printf("watching for changes: %s", path)
-			err = watcher.Remove(path)
-			if err != nil {
-				log.Printf("fs watcher failed to add localpath: %s", err)
-				os.Exit(1)
-			}
-		}
-		return nil
-	}
-
-	// Open up directory
-	// read each file, and send to peerAddr
-	filepath.Walk(localPath, walkFn)
-
+	watcher.RemoveRecursive(basePath)
 }
