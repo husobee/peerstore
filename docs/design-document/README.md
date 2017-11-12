@@ -751,7 +751,8 @@ The client now runs as a daemon when the `sync` operation is given:
 
 ```
 # backup and synchronize a directory
-./release/peerstore_client-latest-linux-amd64 -peerAddr :3001 -localPath ~/peerstore/ -operation sync -peerKeyFile .peerstore/3001/publickey.pem  -selfKeyFile .peerstore/user1.pem
+
+./release/peerstore_client-latest-linux-amd64 -peerAddr :3001 -localPath /home/husobee/peerstore/ -operation sync -peerKeyFile .peerstore/3001/publickey.pem  -selfKeyFile .peerstore/user1.pem -poll 10s
 ```
 
 When this command is run the client will run in a daemon mode.  On startup the
