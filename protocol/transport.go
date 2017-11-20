@@ -74,6 +74,10 @@ func (t *Transport) RoundTrip(request *Request) (Response, error) {
 		return Response{}, errors.Wrap(err, "failure encoding request: ")
 	}
 	_, response, _, err := decryptAndDecodeResponse(t.dec, t.selfKey)
+	if err != nil {
+		glog.Infof("failed to decrypt and decode in roundtrip: %s", err)
+		return Response{}, errors.Wrap(err, "failure decoding response: ")
+	}
 	return *response, err
 }
 

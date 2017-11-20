@@ -30,6 +30,9 @@ func Post(path string, key [20]byte, data io.Reader) error {
 	glog.Info("opening destination file",
 		fmt.Sprintf("%s/%s", path, hex.EncodeToString(key[:])),
 	)
+	// rm existing file first...
+	os.Remove(fmt.Sprintf("%s/%s", path, hex.EncodeToString(key[:])))
+
 	f, err := os.OpenFile(
 		fmt.Sprintf("%s/%s", path, hex.EncodeToString(key[:])),
 		os.O_RDWR|os.O_CREATE, 0600,
