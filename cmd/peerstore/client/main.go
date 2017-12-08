@@ -95,6 +95,10 @@ func validateParams() error {
 		if filename == "" {
 			return errors.New("filename must be set")
 		}
+	} else if operation == "share" {
+		if filename == "" {
+			return errors.New("filename must be set")
+		}
 
 	} else {
 		return errors.New("must specify operation flag, either backup or getfile")
@@ -181,7 +185,48 @@ func main() {
 	rt.Close()
 	log.Printf("response: %+v", resp)
 
+	var peer = models.Node{
+		Addr:      peerAddr,
+		PublicKey: &peerKey,
+	}
+
 	switch operation {
+	case "share":
+		log.Println("starting share!")
+		// create a transport to our peer
+		t, err := createTransport(peer, privateKey)
+		if !handleError(err) {
+			return
+		}
+		defer t.Close()
+		// get the node that has the file
+		node, err := getNode(fileToKeyIdentifer(filename), id, t)
+		// connect to node housing the data
+		st, err := createTransport(node, privateKey)
+		if !handleError(err) {
+			return
+		}
+		defer st.Close()
+		// get the file
+		resp, err := getKey(fileToKeyIdentifier(filename), id, st)
+		if !handleError(err) {
+			return
+		}
+		// read the "Secret" header and decrypt session key
+		secret := resp.Header.Secret
+		// encrypt session key with public key of shared user
+		ptKey, err := crypto.DecryptRSA(selfKey, resp.Header.Secret)
+		if !handleError(err) {
+			return
+		}
+
+		// use the shareWithKeyFile to add the share with user's
+		// id and encrypted session key from their public key
+
+		// populate SharedWith header, shared user's id/encrypted key
+
+		// post file
+
 	case "sync":
 		log.Println("starting sync!")
 
@@ -189,12 +234,12 @@ func main() {
 			quitChan   = make(chan bool)
 			signalChan = make(chan os.Signal)
 		)
-		// TODO: need to kickoff a lookup to the transaction log in the DHT
+		// need to kickoff a lookup to the transaction log in the DHT
 		// if there is a transaction log, we need to perform a get on all the
 		// resources that are listed in the transaction log and update our
 		// transaction log
 
-		// TODO: need to kick off an fsnotify to watch for changes to files
+		// need to kick off an fsnotify to watch for changes to files
 		// (except when we make changes from the sync)
 		watcher, err := rfsnotify.NewWatcher()
 		if err != nil {
@@ -269,59 +314,31 @@ func main() {
 		var walkFn = func(path string, fi os.FileInfo, err error) error {
 			if !fi.IsDir() {
 				log.Printf("file is: %s\n", path)
-
-				// the key for the distributed lookup
-				key := sha1.Sum([]byte(path))
-				data, err := ioutil.ReadFile(path) // path is the path to the file.
-
+				// read the file
+				data, err := ioutil.ReadFile(path)
 				// figure out where to connect to
-				st, err := protocol.NewTransport("tcp", peerAddr, protocol.UserType, id, &peerKey, privateKey)
-				if err != nil {
-					log.Printf("ERR: %v", err)
+				t, err := createTransport(peer, privateKey)
+				if !handleError(err) {
+					return
+				}
+				defer t.Close()
+
+				node, err := getNode(fileToKeyIdentifer(path), t)
+				if !handleError(err) {
+					return
 				}
 
-				// serialize our get successor request
-				var idBuf = new(bytes.Buffer)
-				enc := gob.NewEncoder(idBuf)
-				enc.Encode(models.SuccessorRequest{
-					models.Identifier(key),
-				})
-				resp, err := st.RoundTrip(&protocol.Request{
-					Header: protocol.Header{
-						From:   id,
-						Type:   protocol.UserType,
-						PubKey: privateKey.Public().(*rsa.PublicKey),
-					},
-					Method: protocol.GetSuccessorMethod,
-					Data:   idBuf.Bytes(),
-				})
-				if err != nil {
-					log.Printf("Failed to round trip the successor request: %v", err)
-					return errors.Wrap(err, "failed round trip")
+				st, err := createTransport(node, privateKey)
+				if !handleError(err) {
+					return
 				}
-				st.Close()
-
-				// connect to that host for this file
-				// pull node out of response, and connect to that host
-				var node = models.Node{}
-				dec := gob.NewDecoder(bytes.NewBuffer(resp.Data))
-				err = dec.Decode(&node)
-				if err != nil {
-					log.Printf("Failed to deserialize the node data: %v", err)
-					return errors.Wrap(err, "failed to deserialize")
-				}
-
-				// figure out where to connect to
-				t, err := protocol.NewTransport("tcp", peerAddr, protocol.UserType, id, node.PublicKey, privateKey)
-				if err != nil {
-					log.Printf("ERR: %v", err)
-				}
+				defer st.Close()
 
 				// send the file over
 				log.Println("starting request: ", protocol.PostFileMethod)
-				response, err := t.RoundTrip(&protocol.Request{
+				response, err := st.RoundTrip(&protocol.Request{
 					Header: protocol.Header{
-						Key:          key,
+						Key:          fileToKeyIdentifier(path),
 						Type:         protocol.UserType,
 						From:         id,
 						DataLength:   uint64(len(data)),
@@ -332,15 +349,9 @@ func main() {
 					Method: protocol.PostFileMethod,
 					Data:   data,
 				})
-				if err != nil {
-					log.Printf("ERR: %v\n", err)
+				if !handleError(err) {
+					return
 				}
-				log.Printf("Response: %+v\n", response)
-
-				if err != nil {
-					fmt.Println("Fail")
-				}
-				t.Close()
 			}
 			return nil
 		}
@@ -351,67 +362,24 @@ func main() {
 
 	case "getfile":
 		log.Printf("getting file: %s, putting %s", filename, filedest)
-		// the key for the distributed lookup
-		key := sha1.Sum([]byte(filename))
-
-		// figure out where to connect to
-		st, err := protocol.NewTransport("tcp", peerAddr, protocol.UserType, id, &peerKey, privateKey)
-		if err != nil {
-			log.Printf("ERR: %v", err)
-		}
-
-		// serialize our get successor request
-		var idBuf = new(bytes.Buffer)
-		enc := gob.NewEncoder(idBuf)
-		enc.Encode(models.SuccessorRequest{
-			models.Identifier(key),
-		})
-		resp, err := st.RoundTrip(&protocol.Request{
-			Header: protocol.Header{
-				Type: protocol.UserType,
-				From: id,
-				Key:  key,
-			},
-			Method: protocol.GetSuccessorMethod,
-			Data:   idBuf.Bytes(),
-		})
-		if err != nil {
-			log.Printf("Failed to round trip the successor request: %v", err)
+		t, err := createTransport(peer, privateKey)
+		if !handleError(err) {
 			return
 		}
+		defer t.Close()
 
-		log.Printf("found node")
+		// get the node that houses the file we need
+		node, err := getNode(fileToKeyIdentifer(filename), id, t)
 
-		// connect to that host for this file
-		// pull node out of response, and connect to that host
-		var node = models.Node{}
-		dec := gob.NewDecoder(bytes.NewBuffer(resp.Data))
-		err = dec.Decode(&node)
-		if err != nil {
-			log.Printf("Failed to deserialize the node data: %v", err)
+		st, err = createTransport(node, privateKey)
+		if !handleError(err) {
 			return
 		}
+		defer st.Close()
 
-		// figure out where to connect to
-		t, err := protocol.NewTransport("tcp", peerAddr, protocol.UserType, id, node.PublicKey, privateKey)
-		if err != nil {
-			log.Printf("ERR: %v", err)
-		}
-
-		resp, err = t.RoundTrip(&protocol.Request{
-			Header: protocol.Header{
-				Type: protocol.UserType,
-				From: id,
-				Key:  key,
-			},
-			Method: protocol.GetFileMethod,
-		})
-		if err != nil {
-			log.Printf("Failed to round trip the successor request: %v", err)
-			return
-		}
-		if resp.Status == protocol.Error {
-			log.Printf("failed to get resource requested.")
+		// get the key
+		resp, err := getKey(fileToKeyIdentifier(filename), id, t)
+		if !handleError(err) {
 			return
 		}
 
@@ -421,6 +389,77 @@ func main() {
 			return
 		}
 	}
+}
+
+func fileToKeyIdentifier(filename string) models.Identifier {
+	return models.Identifier(sha1.Sum([]byte(filename)))
+}
+
+func getNode(key, id models.Identifier, t *protocol.Transport) (models.Node, error) {
+	// serialize our get successor request
+	var (
+		idBuf = new(bytes.Buffer)
+		node  = models.Node{}
+		enc   = gob.NewEncoder(idBuf)
+	)
+	// encode successor request
+	enc.Encode(models.SuccessorRequest{key})
+	// perform round trip on transport
+	resp, err := t.RoundTrip(&protocol.Request{
+		Header: protocol.Header{
+			Type: protocol.UserType,
+			From: id,
+			Key:  key,
+		},
+		Method: protocol.GetSuccessorMethod,
+		Data:   idBuf.Bytes(),
+	})
+	if err != nil {
+		log.Printf("Failed to round trip the successor request: %v", err)
+		return node, errors.Wrap(err, "failed round trip to find successor")
+	}
+
+	log.Printf("found node")
+
+	dec := gob.NewDecoder(bytes.NewBuffer(resp.Data))
+	err = dec.Decode(&node)
+	if err != nil {
+		log.Printf("Failed to deserialize the node data: %v", err)
+		return node, errors.Wrap(err, "failed to deserialize node data")
+	}
+	return node, nil
+}
+
+func createTransport(node models.Node, key *rsa.PrivateKey) (protocol.Transport, error) {
+	return protocol.NewTransport(
+		"tcp", node.Addr, protocol.UserType, id, node.PublicKey, privateKey)
+}
+
+func handleError(err error) bool {
+	if err != nil {
+		log.Printf("ERR: %v", err)
+	}
+}
+
+func getKey(key, id models.Identifier, t *protocol.Transport) (protocol.Response, error) {
+	// perform round trip
+	resp, err = t.RoundTrip(&protocol.Request{
+		Header: protocol.Header{
+			Type: protocol.UserType,
+			From: id,
+			Key:  key,
+		},
+		Method: protocol.GetFileMethod,
+	})
+	if err != nil {
+		log.Printf("Failed to round trip the successor request: %v", err)
+		return protocol.Response{}, errors.Wrap(err, "failed round trip")
+	}
+	if resp.Status == protocol.Error {
+		log.Printf("failed to get resource requested.")
+		return protocol.Response{}, errors.Wrap(err, "protocol failure")
+	}
+	return resp, nil
 }
 
 var tl = models.TransactionLog{}
