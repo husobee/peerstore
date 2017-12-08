@@ -57,9 +57,9 @@ func GetFileHandler(ctx context.Context, r *protocol.Request) protocol.Response 
 		}
 	}
 
-	idSecrets = []idSecret{}
+	idSecrets := []idSecret{}
 
-	for i := byte(0); i < ownerCount; i++ {
+	for i := byte(0); i < ownerCount[0]; i++ {
 		// read the owner id out of the "header" of the file
 		idSlice := make([]byte, 20)
 		n, err := buf.Read(idSlice)
@@ -78,7 +78,7 @@ func GetFileHandler(ctx context.Context, r *protocol.Request) protocol.Response 
 		}
 
 		secretSlice := make([]byte, 32)
-		n, err := buf.Read(secretSlice)
+		n, err = buf.Read(secretSlice)
 		glog.Infof("secret is: %x", secretSlice)
 		if n != 20 {
 			glog.Infof("ERR: could not read header from file\n")
@@ -156,23 +156,31 @@ func PostFileHandler(ctx context.Context, r *protocol.Request) protocol.Response
 	// perform file get based on key
 	buf, err := Get(dataPath, r.Header.Key)
 	defer buf.Close()
+
+	var timestamp = models.IncrementClock(r.Header.Clock)
+	response := protocol.Response{
+		Header: protocol.Header{
+			Clock: timestamp,
+		},
+	}
+
 	if err != nil {
 		// this can mean it doesn't exist, so we should make it
 
-		buf = []byte{}
-		buf = append(buf, byte(1+len(r.Header.SharedWith)))
+		header := []byte{}
+		header = append(header, byte(1+len(r.Header.SharedWith)))
 		// user's id and secret
-		buf = append(buf, r.Header.From[:]...)
-		buf = append(buf, r.Header.Secret...)
+		header = append(header, r.Header.From[:]...)
+		header = append(header, r.Header.Secret...)
 
 		// shared with
 		for _, shareWith := range r.Header.SharedWith {
-			buf = append(buf, shareWith.ID[:]...)
-			buf = append(buf, shareWith.Secret...)
+			header = append(header, shareWith.ID[:]...)
+			header = append(header, shareWith.Secret...)
 		}
 
 		if err := Post(
-			dataPath, r.Header.Key, bytes.NewBuffer(append(buf, r.Data...)),
+			dataPath, r.Header.Key, bytes.NewBuffer(append(header, r.Data...)),
 		); err != nil {
 			glog.Infof("ERR: %s", err.Error())
 			return protocol.Response{
@@ -198,9 +206,9 @@ func PostFileHandler(ctx context.Context, r *protocol.Request) protocol.Response
 			}
 		}
 
-		idSecrets = []idSecret{}
+		idSecrets := []idSecret{}
 
-		for i := byte(0); i < ownerCount; i++ {
+		for i := byte(0); i < ownerCount[0]; i++ {
 			// read the owner id out of the "header" of the file
 			idSlice := make([]byte, 20)
 			n, err := buf.Read(idSlice)
@@ -219,7 +227,7 @@ func PostFileHandler(ctx context.Context, r *protocol.Request) protocol.Response
 			}
 
 			secretSlice := make([]byte, 32)
-			n, err := buf.Read(secretSlice)
+			n, err = buf.Read(secretSlice)
 			glog.Infof("secret is: %x", secretSlice)
 			if n != 20 {
 				glog.Infof("ERR: could not read header from file\n")
@@ -252,23 +260,30 @@ func PostFileHandler(ctx context.Context, r *protocol.Request) protocol.Response
 				response.Header.Secret = pair.Secret
 			}
 		}
+
+		if !found {
+			glog.Infof("Unauthorized Post Request: %v", r)
+			return protocol.Response{
+				Status: protocol.Error,
+			}
+		}
 		// package up the number of shared owners, and keys
 
-		buf := []byte{}
+		header := []byte{}
 
-		buf = append(buf, byte(len(idSecrets)+len(r.Header.SharedWith)))
+		header = append(header, byte(len(idSecrets)+len(r.Header.SharedWith)))
 		for _, pair := range idSecrets {
-			buf = append(buf, pair.ID[:]...)
-			buf = append(buf, pair.Secret...)
+			header = append(header, pair.ID[:]...)
+			header = append(header, pair.Secret...)
 		}
 
 		for _, shareWith := range r.Header.SharedWith {
-			buf = append(buf, shareWith.ID[:]...)
-			buf = append(buf, shareWith.Secret...)
+			header = append(header, shareWith.ID[:]...)
+			header = append(header, shareWith.Secret...)
 		}
 		// now we have all our old state, lets post the data changes
 		if err := Post(
-			dataPath, r.Header.Key, bytes.NewBuffer(append(buf, r.Data...)),
+			dataPath, r.Header.Key, bytes.NewBuffer(append(header, r.Data...)),
 		); err != nil {
 			glog.Infof("ERR: %s", err.Error())
 			return protocol.Response{
@@ -279,14 +294,8 @@ func PostFileHandler(ctx context.Context, r *protocol.Request) protocol.Response
 
 	glog.Infof("!!!!!!!!!!!!!!!!!!!!! POST FILE request: !!!!!!!!!!! %s", string(r.Data))
 
-	var timestamp = models.IncrementClock(r.Header.Clock)
-
-	return protocol.Response{
-		Header: protocol.Header{
-			Clock: timestamp,
-		},
-		Status: protocol.Success,
-	}
+	response.Status = protocol.Success
+	return response
 }
 
 // DeleteFileHandler - This is the server handler which manages Delete File Requests
@@ -321,9 +330,9 @@ func DeleteFileHandler(ctx context.Context, r *protocol.Request) protocol.Respon
 		}
 	}
 
-	idSecrets = []idSecret{}
+	idSecrets := []idSecret{}
 
-	for i := byte(0); i < ownerCount; i++ {
+	for i := byte(0); i < ownerCount[0]; i++ {
 		// read the owner id out of the "header" of the file
 		idSlice := make([]byte, 20)
 		n, err := buf.Read(idSlice)
@@ -342,7 +351,7 @@ func DeleteFileHandler(ctx context.Context, r *protocol.Request) protocol.Respon
 		}
 
 		secretSlice := make([]byte, 32)
-		n, err := buf.Read(secretSlice)
+		n, err = buf.Read(secretSlice)
 		glog.Infof("secret is: %x", secretSlice)
 		if n != 20 {
 			glog.Infof("ERR: could not read header from file\n")
@@ -362,6 +371,14 @@ func DeleteFileHandler(ctx context.Context, r *protocol.Request) protocol.Respon
 
 		idSecrets = append(idSecrets, idSecret{
 			ID: id, Secret: secretSlice})
+	}
+
+	var timestamp = models.IncrementClock(r.Header.Clock)
+	response := protocol.Response{
+		Header: protocol.Header{
+			Clock: timestamp,
+		},
+		Status: protocol.Success,
 	}
 
 	// check each id in the list
@@ -393,12 +410,5 @@ func DeleteFileHandler(ctx context.Context, r *protocol.Request) protocol.Respon
 		}
 	}
 
-	var timestamp = models.IncrementClock(r.Header.Clock)
-
-	return protocol.Response{
-		Header: protocol.Header{
-			Clock: timestamp,
-		},
-		Status: protocol.Success,
-	}
+	return response
 }

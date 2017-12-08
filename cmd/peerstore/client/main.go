@@ -194,15 +194,15 @@ func main() {
 	case "share":
 		log.Println("starting share!")
 		// create a transport to our peer
-		t, err := createTransport(peer, privateKey)
+		t, err := createTransport(id, peer, privateKey)
 		if !handleError(err) {
 			return
 		}
 		defer t.Close()
 		// get the node that has the file
-		node, err := getNode(fileToKeyIdentifer(filename), id, t)
+		node, err := getNode(fileToKeyIdentifier(filename), id, t)
 		// connect to node housing the data
-		st, err := createTransport(node, privateKey)
+		st, err := createTransport(id, node, privateKey)
 		if !handleError(err) {
 			return
 		}
@@ -212,13 +212,13 @@ func main() {
 		if !handleError(err) {
 			return
 		}
-		// read the "Secret" header and decrypt session key
-		secret := resp.Header.Secret
 		// encrypt session key with public key of shared user
-		ptKey, err := crypto.DecryptRSA(selfKey, resp.Header.Secret)
+		// TODO: finish this
+		sKey, err := crypto.DecryptRSA(privateKey, resp.Header.Secret)
 		if !handleError(err) {
 			return
 		}
+		log.Println(sKey)
 
 		// use the shareWithKeyFile to add the share with user's
 		// id and encrypted session key from their public key
@@ -289,7 +289,6 @@ func main() {
 				AddWatchers(watcher, localPath)
 			case event := <-watcher.Events:
 				// we got a filesystem event, pull remote transaction log
-				// TODO: get transaction log and associated resources
 				// update it accordingly and save
 				if event.Op == fsnotify.Write {
 					log.Println("file written: ", event.Name)
@@ -317,26 +316,26 @@ func main() {
 				// read the file
 				data, err := ioutil.ReadFile(path)
 				// figure out where to connect to
-				t, err := createTransport(peer, privateKey)
+				t, err := createTransport(id, peer, privateKey)
 				if !handleError(err) {
-					return
+					return errors.Wrap(err, "failed to create transport")
 				}
 				defer t.Close()
 
-				node, err := getNode(fileToKeyIdentifer(path), t)
+				node, err := getNode(fileToKeyIdentifier(path), id, t)
 				if !handleError(err) {
-					return
+					return errors.Wrap(err, "failed to get node")
 				}
 
-				st, err := createTransport(node, privateKey)
+				st, err := createTransport(id, node, privateKey)
 				if !handleError(err) {
-					return
+					return errors.Wrap(err, "failed to create transport")
 				}
 				defer st.Close()
 
 				// send the file over
 				log.Println("starting request: ", protocol.PostFileMethod)
-				response, err := st.RoundTrip(&protocol.Request{
+				_, err = st.RoundTrip(&protocol.Request{
 					Header: protocol.Header{
 						Key:          fileToKeyIdentifier(path),
 						Type:         protocol.UserType,
@@ -350,7 +349,7 @@ func main() {
 					Data:   data,
 				})
 				if !handleError(err) {
-					return
+					return errors.Wrap(err, "failed to post file")
 				}
 			}
 			return nil
@@ -362,16 +361,16 @@ func main() {
 
 	case "getfile":
 		log.Printf("getting file: %s, putting %s", filename, filedest)
-		t, err := createTransport(peer, privateKey)
+		t, err := createTransport(id, peer, privateKey)
 		if !handleError(err) {
 			return
 		}
 		defer t.Close()
 
 		// get the node that houses the file we need
-		node, err := getNode(fileToKeyIdentifer(filename), id, t)
+		node, err := getNode(fileToKeyIdentifier(filename), id, t)
 
-		st, err = createTransport(node, privateKey)
+		st, err := createTransport(id, node, privateKey)
 		if !handleError(err) {
 			return
 		}
@@ -430,20 +429,22 @@ func getNode(key, id models.Identifier, t *protocol.Transport) (models.Node, err
 	return node, nil
 }
 
-func createTransport(node models.Node, key *rsa.PrivateKey) (protocol.Transport, error) {
+func createTransport(id models.Identifier, node models.Node, key *rsa.PrivateKey) (*protocol.Transport, error) {
 	return protocol.NewTransport(
-		"tcp", node.Addr, protocol.UserType, id, node.PublicKey, privateKey)
+		"tcp", node.Addr, protocol.UserType, id, node.PublicKey, key)
 }
 
 func handleError(err error) bool {
 	if err != nil {
 		log.Printf("ERR: %v", err)
+		return false
 	}
+	return true
 }
 
 func getKey(key, id models.Identifier, t *protocol.Transport) (protocol.Response, error) {
 	// perform round trip
-	resp, err = t.RoundTrip(&protocol.Request{
+	resp, err := t.RoundTrip(&protocol.Request{
 		Header: protocol.Header{
 			Type: protocol.UserType,
 			From: id,
