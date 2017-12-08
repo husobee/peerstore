@@ -103,6 +103,13 @@ type Header struct {
 	ResourceName string
 	Log          bool
 	Clock        uint64
+	Secret       []byte
+	SharedWith   []SharedSecret
+}
+
+type SharedSecret struct {
+	ID     models.Identifier
+	Secret []byte
 }
 
 // Validate - Implement validate for the header validation

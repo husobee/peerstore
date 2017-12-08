@@ -785,3 +785,101 @@ standard library dependencies and version pin them to a working version.
  - [Golang Documentation](https://golang.org/doc/)
 
 
+
+## Milestone 4 - Encryption at Rest and File Sharing
+
+
+The key objective of this milestone is to add support for multiple user file
+sharing as well as implementing encryption at rest.  To support this feature the
+following implementation items are considered:
+
+1. Encryption at Rest performed before file is sent to server for storage
+2. Multiple user capability achieved by using public key cryptography
+    * Encrypted session token per user maintained in the file storage module
+    * Changes in file storage allows for multiple owners in validation code
+
+Based on the objectives, we only need to make a couple of changes to accomplish
+these tasks.  Firstly we need to update the file handler code in the server side
+file module to validate not one key anymore, but rather multiple keys.  Secondly
+we need to update the client code to perform session key generation, and
+encryption of the data prior to sending the data to the server.  By design, the
+server nodes will merely store the data as is and include a header to denote
+ownership.
+
+
+
+
+
+
+### Use Cases
+
+
+
+### Component Architectures
+
+#### File Package
+
+#### Sample Build
+
+To build, you run `make release` or if you want a particular result, you can specify
+such as `make linux`
+
+#### Running Notes
+
+Starting a single peerstore server with no peers:
+
+There is no change in how to start the server from Milestone 2.  Please refer to
+the Milestone 2 documentation in order to start the server.
+
+
+Starting the peerstore client:
+
+There is significant changes to the client in the Milestone, primarily due to
+the watching of file changes on the filesystem, and the polling required to keep
+the client up to date.
+
+The client now runs as a daemon when the `sync` operation is given:
+
+```
+# backup and synchronize a directory
+
+./release/peerstore_client-latest-linux-amd64 -peerAddr :3001 -localPath /home/husobee/peerstore/ -operation sync -peerKeyFile .peerstore/3001/publickey.pem  -selfKeyFile .peerstore/user1.pem -poll 10s
+```
+
+When this command is run the client will run in a daemon mode.  On startup the
+client will poll for any transaction that relate to any files within the
+`localPath`, and if there are resources within this localPath the client will
+pull those resources from the DHT and place them in the `localPath`.
+
+The client now uses a file system watcher to watch for any file changes within
+`localPath` and will send the file changes to the DHT.
+
+In order to run, I suggest running the above command in one terminal window, and
+then changing the files on the filesystem in another command window.
+
+You can validate that the storage of the files in the peer nodes are encrypted
+by looking in the data directory on the server nodes where the files are stored.
+
+In order to perform a "share" of a file with another user you can use the `share`
+command:
+
+```
+# share a particular file with another user
+
+./release/peerstore_client-latest-linux-amd64 -peerAddr :3001 -localPath /home/husobee/peerstore/some.txt -operation share -peerKeyFile .peerstore/3001/publickey.pem  -selfKeyFile .peerstore/user1.pem -shareWithKeyFile .peerstore/user2.pem
+```
+
+This will inform the server node storing some.txt the ownership records in the
+file need to be updated.  The client will encrypt the session key with
+user2's public key, so the user2 will be able to decrypt the file.
+
+### Dependencies
+
+No additional dependencies were added to support these changes.
+
+
+### Resources
+
+ - [Golang Documentation](https://golang.org/doc/)
+
+
