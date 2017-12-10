@@ -203,7 +203,7 @@ func (s *Server) UserRegistrationHandler(ctx context.Context, r *Request) Respon
 			From:       s.id,
 			DataLength: uint64(len(buf.Bytes())),
 		},
-		Method: PostFileMethod,
+		Method: PostPublicKeyMethod,
 		Data:   buf.Bytes(),
 	})
 	if err != nil {

@@ -235,6 +235,8 @@ func main() {
 	// file handler routes
 	server.Handle(protocol.GetFileMethod, file.GetFileHandler)
 	server.Handle(protocol.PostFileMethod, file.PostFileHandler)
+	server.Handle(protocol.GetPublicKeyMethod, file.GetPublicKeyHandler)
+	server.Handle(protocol.PostPublicKeyMethod, file.PostPublicKeyHandler)
 	server.Handle(protocol.DeleteFileMethod, file.DeleteFileHandler)
 	// chord handler routes
 	server.Handle(protocol.GetSuccessorMethod, localNode.SuccessorHandler)

@@ -39,10 +39,32 @@ func unpadPKCS7(in []byte) []byte {
 	return in[:len(in)-int(padding)]
 }
 
+// EncryptWithIV - encrypt encrypts with aes256 in cbc mode, returns
+// ciphertext, iv and error
+func EncryptWithIV(key, plaintext, iv []byte) ([]byte, []byte, error) {
+	// pad the text before trying to encrypt
+
+	paddedPlaintext := padPKCS7(plaintext)
+	// create a new block cipher
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "failed to create new cipher: ")
+	}
+
+	// our encrypter
+	mode := cipher.NewCBCEncrypter(block, iv)
+	// do the encryption
+	// will do encryption in place if arguments are the same..
+	mode.CryptBlocks(paddedPlaintext, paddedPlaintext)
+
+	return paddedPlaintext, iv, nil
+}
+
 // Encrypt - encrypt encrypts with aes256 in cbc mode, returns
 // ciphertext, iv and error
 func Encrypt(key, plaintext []byte) ([]byte, []byte, error) {
 	// pad the text before trying to encrypt
+
 	paddedPlaintext := padPKCS7(plaintext)
 	// create a new block cipher
 	block, err := aes.NewCipher(key)

@@ -806,18 +806,75 @@ encryption of the data prior to sending the data to the server.  By design, the
 server nodes will merely store the data as is and include a header to denote
 ownership.
 
-
-
-
-
-
-### Use Cases
-
-
-
 ### Component Architectures
 
 #### File Package
+
+Within the file package changes were required as outlined below:
+
+##### File Header Changes
+
+For stored files, there is now a list of user ids as well as session keys for
+each user who has permissions to the file.  Before we just had a single 20 byte
+block at the top of the file which held the key of the owning user.  This block
+allowed the server to download the appropriate user public key from the DHT to
+perform a signature validation on each request.  If the request was signed by
+the private key portion corresponding to the public key id in the 20 byte block,
+then that user was the true owner of the resource.  This paradigm does not work
+with multiple users, moreover it doesn't work when the resource is encrypted.
+
+The new file header block contains a variable length list of user's and
+corresponding session keys those users will be able to decrypt with their
+private key.  The first byte in the stored file on a node tells the node how
+many users are enumerated in the new file header.  The node then iterates over
+that many blocks within the file, looking for the id of the requesting user,
+and then validates that request's signature against the public key stored in the
+DHT.
+
+The file structure now looks like this:
+
+```
+First Byte: Number of Keys in Header
+Next 20 Bytes: Identifier of First Permitted User
+Next 256 Bytes: RSA Encrypted Session Key for Said User to Decrypt Payload
+Next 20 Bytes: Identifier of Next Permitted User
+Next 256 Bytes: RSA Encrypted Session Key for Next User to Decrypt Payload
+...
+Payload
+```
+
+These changes allow the node to validate multiple users can access the resource,
+and also allow the server to send the appropriate session key to the requesting
+user for that user to decrypt the encrypted payload.
+
+##### Client Changes
+
+The client needed to be changed to facilitate the milestone objectives.  The
+client now performs encryption and decryption of the payload which will be
+stored on each node.  This allows for better security as the payload is not
+decipherable by the node housing the data.  This encryption at rest allows
+for data security.
+
+In order to accomplish this, a design decision was made to store the AES IV
+as the first aes.BlockSize chunk of the request Data.  This will ensure that
+when the payload is downloaded, we will be able to decrypt the data properly.
+
+Another design decision was to have a "shared key" across all of the users
+who have access to the resource.  This shared key is safe gaurded in the client
+through the use of RSA cryptography, in that the user is able to decrypt the
+session key with said user's private key.  In the case of sharing a resource
+the user merely encrypts the shared key with the shared user's public key,
+which is easily discoverable in the DHT.
+
+##### Server Changes
+
+Two new handlers were added, PostPublicKeyHandler and GetPublicKeyHandler.  It
+turns out that since we want the user's registered public keys public to
+everyone, it no longer made sense to merely use the PostHandler and the GetHandler
+as those handlers had to be changed to facilitate ownership.  By breaking these
+handlers out into new handlers we can treat them as public and avoid all of
+the ownership codepaths.  These public keys are still stored in the DHT, though
+they are now plain text files, and do not have the same file headers as resources.
 
 #### Sample Build
 
@@ -834,44 +891,68 @@ the Milestone 2 documentation in order to start the server.
 
 Starting the peerstore client:
 
-There is significant changes to the client in the Milestone, primarily due to
-the watching of file changes on the filesystem, and the polling required to keep
-the client up to date.
+##### Setup
 
-The client now runs as a daemon when the `sync` operation is given:
-
-```
-# backup and synchronize a directory
-
-./release/peerstore_client-latest-linux-amd64 -peerAddr :3001 -localPath /home/husobee/peerstore/ -operation sync -peerKeyFile .peerstore/3001/publickey.pem  -selfKeyFile .peerstore/user1.pem -poll 10s
-```
-
-When this command is run the client will run in a daemon mode.  On startup the
-client will poll for any transaction that relate to any files within the
-`localPath`, and if there are resources within this localPath the client will
-pull those resources from the DHT and place them in the `localPath`.
-
-The client now uses a file system watcher to watch for any file changes within
-`localPath` and will send the file changes to the DHT.
-
-In order to run, I suggest running the above command in one terminal window, and
-then changing the files on the filesystem in another command window.
-
-You can validate that the storage of the files in the peer nodes are encrypted
-by looking in the data directory on the server nodes where the files are stored.
-
-In order to perform a "share" of a file with another user you can use the `share`
-command:
+In order to `share` a file across users, you need to "register" two users.  For
+our example the following steps will create two different users:
 
 ```
-# share a particular file with another user
+# create and register user1
 
-./release/peerstore_client-latest-linux-amd64 -peerAddr :3001 -localPath /home/husobee/peerstore/some.txt -operation share -peerKeyFile .peerstore/3001/publickey.pem  -selfKeyFile .peerstore/user1.pem -shareWithKeyFile .peerstore/user2.pem
+
+In order to `share` a file across users, you need to "register" two users.  For
+our example the following steps will create two different users using the
+"backup" command, which creates the "selfKeyFile" as well as registers the user,
+as well as performs a backup of the directory specified by "localPath":
+
+```
+mkdir ~/peerstore1
+mkdir ~/peerstore2
+
+echo "user1 sharing with user2" > ~/peerstore1/user1.txt
+echo "user2 only" > ~/peerstore2/user2.txt
+
+# create and register user1
+./release/peerstore_client-latest-linux-amd64 -peerAddr :3001 -localPath ~/peerstore1/ -operation backup -peerKeyFile .peerstore/3001/publickey.pem  -selfKeyFile .peerstore/user1.pem
+# create and register user2
+./release/peerstore_client-latest-linux-amd64 -peerAddr :3001 -localPath ~/peerstore2/ -operation backup -peerKeyFile .peerstore/3001/publickey.pem  -selfKeyFile .peerstore/user2.pem
 ```
 
-This will inform the server node storing some.txt the ownership records in the
-file need to be updated.  The client will encrypt the session key with
-user2's public key, so the user2 will be able to decrypt the file.
+At this point you have created two users, and one private document for each user
+which are now backed up in the DHT.  If you at this point attempt to "getfile"
+you will find that the other's files are not available:
+
+```
+# attempting to get user1's text file using the user2 private key
+./release/peerstore_client-latest-linux-amd64 -filedest ~/user1.txt.restored -peerAddr :3001 -filename ~/peerstore1/user1.txt -operation getfile -peerKeyFile .peerstore/3001/publickey.pem -selfKeyFile .peerstore/user2.pem
+# this will fail, as user2 does not have permission for user1's file
+```
+
+In order to share documents across users, which is part of this milestone
+I have implemented a "share" command which will allow user1 to grant
+permission to user2 for a given file:
+
+```
+# grant user2 access to user1.txt
+./release/peerstore_client-latest-linux-amd64 -peerAddr :3001 -filename ~/peerstore1/user1.txt -operation share -peerKeyFile .peerstore/3001/publickey.pem  -selfKeyFile .peerstore/user1.pem -shareWithKeyFile .peerstore/user2.pem
+```
+
+By specifying the `shareWithKeyFile` flag and the `operation` share this
+file is now downloadable by user2:
+
+```
+# user2 "getfile" user1.txt which was shared
+./release/peerstore_client-latest-linux-amd64 -filedest ~/user1.txt.restored -peerAddr :3001 -filename ~/peerstore1/user1.txt -operation getfile -peerKeyFile .peerstore/3001/publickey.pem -selfKeyFile .peerstore/user2.pem
+# file user1.txt has now been downloaded to ~/user1.txt.restored
+```
+
+I have included a bash script to test the above functionality out here:
+
+`docs/design-document/Milestone4/test-milestone4.sh`
+
+You will also notice that the server's data directory will house the file in
+encrypted format, achieving the second aspect of this deliverable.
+
 
 ### Dependencies
 

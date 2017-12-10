@@ -18,6 +18,8 @@ type RequestMethod uint64
 var RequestMethodToString = map[RequestMethod]string{
 	GetFileMethod:          "GetFile",
 	PostFileMethod:         "PostFile",
+	GetPublicKeyMethod:     "GetPublicKey",
+	PostPublicKeyMethod:    "PostPublicKey",
 	DeleteFileMethod:       "DeleteFile",
 	GetSuccessorMethod:     "GetSuccessor",
 	SetPredecessorMethod:   "SetPredecessor",
@@ -49,6 +51,8 @@ const (
 	NodeRegistrationMethod
 	// NodeTrustMethod - user registration methos
 	NodeTrustMethod
+	GetPublicKeyMethod
+	PostPublicKeyMethod
 )
 
 // Request - the standard request, includes a header,

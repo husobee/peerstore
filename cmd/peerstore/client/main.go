@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"crypto/aes"
 	"crypto/rsa"
 	"crypto/sha1"
 	"encoding/gob"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -27,13 +29,14 @@ import (
 var (
 	peerAddr string
 	// peerKeyFile - the key file location for a known peer on the network
-	peerKeyFile  string
-	selfKeyFile  string
-	localPath    string
-	operation    string
-	filename     string
-	filedest     string
-	pollInterval time.Duration
+	peerKeyFile      string
+	selfKeyFile      string
+	shareWithKeyFile string
+	localPath        string
+	operation        string
+	filename         string
+	filedest         string
+	pollInterval     time.Duration
 )
 
 func init() {
@@ -58,6 +61,9 @@ func init() {
 	flag.StringVar(
 		&selfKeyFile, "selfKeyFile", "",
 		"the key file location of your private/public key pem file")
+	flag.StringVar(
+		&shareWithKeyFile, "shareWithKeyFile", "",
+		"the key file location of the public key of the user you wish to share with as a pem file")
 	flag.DurationVar(&pollInterval, "poll", time.Second, "the polling interval for sync")
 	flag.Parse()
 }
@@ -193,6 +199,30 @@ func main() {
 	switch operation {
 	case "share":
 		log.Println("starting share!")
+
+		var shareWithKey rsa.PublicKey
+
+		// check that we have a valid shareWithKeyFile
+		_, err := os.Stat(shareWithKeyFile)
+		if !handleError(err) {
+			return
+		}
+
+		keyFile, err := os.Open(fmt.Sprintf("%s", shareWithKeyFile))
+		shareWithKey, err = crypto.ReadPublicKeyAsPem(keyFile)
+		if !handleError(err) {
+			return
+		}
+		// generate the ID of the user we are sharing with
+		gobKey, err := crypto.GobEncodePublicKey(&shareWithKey)
+		if !handleError(err) {
+			return
+		}
+		shareWithID := models.Identifier(sha1.Sum(gobKey))
+
+		// we have our shareWithKey, which we will use to encrypt
+		// the session key
+
 		// create a transport to our peer
 		t, err := createTransport(id, peer, privateKey)
 		if !handleError(err) {
@@ -213,19 +243,46 @@ func main() {
 			return
 		}
 		// encrypt session key with public key of shared user
-		// TODO: finish this
 		sKey, err := crypto.DecryptRSA(privateKey, resp.Header.Secret)
 		if !handleError(err) {
 			return
 		}
-		log.Println(sKey)
 
 		// use the shareWithKeyFile to add the share with user's
 		// id and encrypted session key from their public key
+		encSessionKey, err := crypto.EncryptRSA(&shareWithKey, sKey)
+		if !handleError(err) {
+			return
+		}
 
 		// populate SharedWith header, shared user's id/encrypted key
+		sharedWith := []protocol.SharedSecret{
+			protocol.SharedSecret{
+				ID:     shareWithID,
+				Secret: encSessionKey,
+			},
+		}
 
 		// post file
+		log.Println("starting request: ", protocol.PostFileMethod)
+		_, err = st.RoundTrip(&protocol.Request{
+			Header: protocol.Header{
+				Key:          fileToKeyIdentifier(filename),
+				Type:         protocol.UserType,
+				From:         id,
+				DataLength:   uint64(len(resp.Data)),
+				PubKey:       privateKey.Public().(*rsa.PublicKey),
+				ResourceName: filename,
+				Log:          true,
+				SharedWith:   sharedWith,
+				Secret:       resp.Header.Secret,
+			},
+			Method: protocol.PostFileMethod,
+			Data:   resp.Data,
+		})
+		if !handleError(err) {
+			return
+		}
 
 	case "sync":
 		log.Println("starting sync!")
@@ -313,8 +370,7 @@ func main() {
 		var walkFn = func(path string, fi os.FileInfo, err error) error {
 			if !fi.IsDir() {
 				log.Printf("file is: %s\n", path)
-				// read the file
-				data, err := ioutil.ReadFile(path)
+
 				// figure out where to connect to
 				t, err := createTransport(id, peer, privateKey)
 				if !handleError(err) {
@@ -333,6 +389,59 @@ func main() {
 				}
 				defer st.Close()
 
+				// see if file exists, in order to get secret
+				var (
+					sessionKey []byte
+					secret     []byte
+					iv         []byte
+					ciphertext []byte
+				)
+
+				// read the file
+				plaintext, err := ioutil.ReadFile(path)
+
+				resp, err := getKey(fileToKeyIdentifier(path), id, t)
+				fmt.Println("UHHHH! ", err, resp.Status)
+				if err != nil || resp.Status == protocol.Error {
+					// doesnt exist, create new key
+					log.Println("IN HER$E!!!")
+					sessionKey, secret, err = crypto.GenerateSessionKey(
+						privateKey.Public().(*rsa.PublicKey))
+					log.Printf("plaintext session key: %s", hex.EncodeToString(sessionKey))
+					log.Printf("crypted session key: %s", hex.EncodeToString(secret))
+					log.Printf("len of session key crypted: %d", len(secret))
+					if !handleError(err) {
+						return errors.Wrap(err, "failed to generate session key")
+					}
+					ciphertext, iv, err = crypto.Encrypt(sessionKey, plaintext)
+					if !handleError(err) {
+						return errors.Wrap(err, "failed to encrypt payload")
+					}
+				} else {
+					// user session key from remote
+					secret = resp.Header.Secret
+					sessionKey, err = crypto.DecryptRSA(privateKey, secret)
+					log.Printf("plaintext session key: %s", hex.EncodeToString(sessionKey))
+					log.Printf("crypted session key: %s", hex.EncodeToString(secret))
+					log.Printf("len of session key crypted: %d", len(secret))
+					if !handleError(err) {
+						return errors.Wrap(err, "failed to decrypt session Key")
+					}
+					iv = resp.Data[:aes.BlockSize]
+					ciphertext, iv, err = crypto.EncryptWithIV(sessionKey, plaintext, iv)
+					if !handleError(err) {
+						return errors.Wrap(err, "failed to encrypt payload")
+					}
+				}
+
+				log.Printf("plaintext is: %s", string(plaintext))
+
+				log.Printf("len of ciphertext: %d", len(ciphertext))
+				log.Printf("ciphertext: %s", hex.EncodeToString(ciphertext))
+				log.Printf("len of iv: %d", len(iv))
+				log.Printf("iv: %s", hex.EncodeToString(iv))
+				ciphertext = append(iv, ciphertext...)
+
 				// send the file over
 				log.Println("starting request: ", protocol.PostFileMethod)
 				_, err = st.RoundTrip(&protocol.Request{
@@ -340,13 +449,14 @@ func main() {
 						Key:          fileToKeyIdentifier(path),
 						Type:         protocol.UserType,
 						From:         id,
-						DataLength:   uint64(len(data)),
+						DataLength:   uint64(len(ciphertext)),
 						PubKey:       privateKey.Public().(*rsa.PublicKey),
 						ResourceName: path,
 						Log:          true,
+						Secret:       secret,
 					},
 					Method: protocol.PostFileMethod,
-					Data:   data,
+					Data:   ciphertext,
 				})
 				if !handleError(err) {
 					return errors.Wrap(err, "failed to post file")
@@ -382,7 +492,36 @@ func main() {
 			return
 		}
 
-		err = ioutil.WriteFile(filedest, resp.Data, 0644)
+		log.Printf("response from getKey: %+v", resp)
+		log.Printf("secret from getKey: %+v", hex.EncodeToString(resp.Header.Secret))
+		// get the secret from the header,
+		// decrypt secret
+		sessionKey, err := crypto.DecryptRSA(privateKey, resp.Header.Secret)
+		if !handleError(err) {
+			return
+		}
+
+		log.Printf("plaintext session key is: %s", hex.EncodeToString(sessionKey))
+
+		// pull iv out of data
+		log.Printf("length of data: %d", len(resp.Data))
+		iv := resp.Data[:aes.BlockSize]
+		ciphertext := resp.Data[aes.BlockSize:]
+
+		log.Printf("iv from data: %s", hex.EncodeToString(iv))
+		log.Printf("ciphertext from data: %s", hex.EncodeToString(ciphertext))
+
+		// decrypt data
+		plaintext, err := crypto.Decrypt(sessionKey, ciphertext, iv)
+		if !handleError(err) {
+			log.Printf("err: %s", err.Error())
+			return
+		}
+		// store data
+
+		log.Printf("plaintext is: %s", plaintext)
+
+		err = ioutil.WriteFile(filedest, plaintext, 0644)
 		if err != nil {
 			log.Println(err)
 			return
@@ -458,7 +597,7 @@ func getKey(key, id models.Identifier, t *protocol.Transport) (protocol.Response
 	}
 	if resp.Status == protocol.Error {
 		log.Printf("failed to get resource requested.")
-		return protocol.Response{}, errors.Wrap(err, "protocol failure")
+		return resp, errors.New("protocol failure")
 	}
 	return resp, nil
 }

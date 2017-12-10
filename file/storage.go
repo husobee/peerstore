@@ -13,6 +13,13 @@ import (
 // Get - get a file based on the key, returns an io.Reader
 // which will be used to read the file
 func Get(path string, key [20]byte) (io.ReadCloser, error) {
+
+	if _, err := os.Stat(
+		fmt.Sprintf("%s/%s", path, hex.EncodeToString(key[:]))); err != nil {
+		glog.Info("file does not exist!")
+		return nil, err
+	}
+
 	f, err := os.OpenFile(
 		fmt.Sprintf("%s/%s", path, hex.EncodeToString(key[:])),
 		os.O_RDWR|os.O_CREATE, 0600,

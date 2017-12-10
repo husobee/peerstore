@@ -299,7 +299,7 @@ Outer:
 							Key:  request.Header.From,
 							From: s.id,
 						},
-						Method: GetFileMethod,
+						Method: GetPublicKeyMethod,
 					})
 					st.Close()
 					if err != nil {
